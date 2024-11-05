@@ -12,7 +12,7 @@ module HoldEm where
 
     type Card = (CardVal, Suit)
     type Deck = [Card]
-    type Hand = (Card, Card)
+    type Hand = [Card]
     data Strategy = RandomPlayer | AggressivePlayer | SmartPlayer deriving(Show)
 
     data Player = Player { name :: String, hand :: Hand, chips :: Int, isDealer :: Bool,
@@ -25,24 +25,50 @@ module HoldEm where
       currentPot :: Int, bets :: [Bet], currentDealerIndex :: Int, smallBlind :: Int,
       bigBlind :: Int} deriving(Show)
 
+    -- data Deal = Community | Hole  deriving(Eq)
+    -- dealCards :: Deal -> GameState -> GameState
+    -- dealCards deal state | deal == Hole = state {
+    --                                         activePlayers = dealToPlayers thePlayers theDeck,
+    --                                         deck = drop (2*length thePlayers) theDeck}
+    --                      | null theComCards = state { deck = drop 3 theDeck,
+    --                                                       communityCards = take 3 theDeck,
+    --                                                       activePlayers = dealToPlayers thePlayers (concat ([take 3 theDeck | x <- [1..(length thePlayers)]])) }
+    --                      | otherwise = state { deck = tail theDeck,
+    --                                       communityCards = theComCards ++ [head theDeck],
+    --                                       activePlayers = dealToPlayers thePlayers [head theDeck | x <- [1..(length thePlayers)]]}
+    --   where
+    --     theDeck = deck state
+    --     thePlayers = activePlayers state
+    --     theComCards = communityCards state
 
     data Deal = Community | Hole  deriving(Eq)
-    dealCards :: Deal -> GameState -> GameState
-    dealCards deal state | deal == Hole = state {
-                                            activePlayers = dealToPlayers thePlayers theDeck,
-                                            deck = drop (2*length thePlayers) theDeck}
-                         | null theComCards = state { deck = drop 3 theDeck,
-                                                          communityCards = take 5 theDeck}
-                         | otherwise = state { deck = tail theDeck,
-                                          communityCards = theComCards ++ [head theDeck]}
+    dealCards :: Deal -> GameState -> IO GameState
+    dealCards deal state = do
+      if deal == Hole then return 
+        state {
+          activePlayers = dealToPlayersHole thePlayers theDeck,
+          deck = drop (2*length thePlayers) theDeck}
+      else
+       if null theComCards then
+        return state { deck = drop 3 theDeck,
+                communityCards = take 3 theDeck,
+                activePlayers = dealToPlayersCommunity thePlayers (concat ([take 3 theDeck | x <- [1..(length thePlayers)]])) }
+       else 
+        return state { deck = tail theDeck,
+                      communityCards = theComCards ++ [head theDeck],
+                      activePlayers = dealToPlayersCommunity thePlayers [head theDeck | x <- [1..(length thePlayers)]]}
       where
         theDeck = deck state
         thePlayers = activePlayers state
         theComCards = communityCards state
 
-    dealToPlayers :: CurrentPlayers -> Deck -> CurrentPlayers
-    dealToPlayers [] deck = []
-    dealToPlayers (p:ps) (c1:c2:cs) = p { hand = (c1, c2) } : dealToPlayers ps cs
+    dealToPlayersHole :: CurrentPlayers -> Deck -> CurrentPlayers
+    dealToPlayersHole [] deck = []
+    dealToPlayersHole (p:ps) (c1:c2:cs) = p { hand = hand p ++ [c1, c2] } : dealToPlayersHole ps cs
+
+    dealToPlayersCommunity :: CurrentPlayers -> [Card] -> CurrentPlayers
+    dealToPlayersCommunity[] deck = []
+    dealToPlayersCommunity (p:ps) cs= p { hand = hand p ++ cs} : dealToPlayersCommunity ps cs
 
     type MyList = [Int]
 
@@ -73,7 +99,7 @@ module HoldEm where
                     | length highestKind == 2 && length (getMaxSizeList (delete highestKind groupedByKind)) == 2 = TwoPair
                     | length highestKind == 2 = Pair
                     | otherwise = HighCard
-                    
+
       where
         sortedByKind = sortBy (\(a, _) (b, _)-> compare a b) xs
         groupedByKind = groupBy (\a b -> fst a == fst b) sortedByKind
@@ -100,8 +126,13 @@ module HoldEm where
     getMaxSizeList (x:y:xs) | length x > length y = getMaxSizeList (x:xs)
                             | length y > length x = getMaxSizeList (y:xs)
                             | otherwise = if fst (last x) > fst (last y) then getMaxSizeList (x:xs) else getMaxSizeList (y:xs)
+                            
 
-    data PokerHand = HighCard | Pair | TwoPair | ThreeOfAKind| Straight | Flush | FullHouse | FourOfAKind | StraightFlush | RoyalFlush deriving(Show)
+    data PokerHand = HighCard | Pair | TwoPair | ThreeOfAKind| Straight | Flush | FullHouse | FourOfAKind | StraightFlush | RoyalFlush deriving(Show, Eq, Ord)
+
+    determineWinner :: GameState -> [(Player, PokerHand)]
+    determineWinner state = sortBy (\(_, a) (_, b)-> compare a b)  hands 
+      where hands = [(x, evaluateHand (hand x)) | x <- activePlayers state]
 
 
 
