@@ -134,9 +134,5 @@ module HoldEm where
     determineWinner state = sortBy (\(_, a) (_, b)-> compare a b)  hands 
       where hands = [(x, evaluateHand (hand x)) | x <- activePlayers state]
 
-
-
-    -- evaluateHand :: [Card] -> PokerHand
-    -- evaluateHand [] = []
-    -- evaluateHand xs |
+    --YOOOOOOOOOOOOO
 
