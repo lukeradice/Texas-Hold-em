@@ -52,11 +52,11 @@ module HoldEm where
        if null theComCards then
         return state { deck = drop 3 theDeck,
                 communityCards = take 3 theDeck,
-                activePlayers = dealToPlayersCommunity thePlayers (concat ([take 3 theDeck | x <- [1..(length thePlayers)]])) }
+                activePlayers = dealToPlayersCommunity thePlayers (take 3 theDeck) }
        else 
         return state { deck = tail theDeck,
                       communityCards = theComCards ++ [head theDeck],
-                      activePlayers = dealToPlayersCommunity thePlayers [head theDeck | x <- [1..(length thePlayers)]]}
+                      activePlayers = dealToPlayersCommunity thePlayers [head theDeck] }
       where
         theDeck = deck state
         thePlayers = activePlayers state
