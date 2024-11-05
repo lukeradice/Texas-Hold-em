@@ -63,12 +63,24 @@ module HoldEm where
 
 
     evaluateHand :: [Card] -> PokerHand
-    evaluateHand xs | length xs == 2 = if fst (xs!!0) == fst (xs!!1) then TwoPair else HighCard
-                    | otherwise = RoyalFlush
+    evaluateHand xs | length xs == 2 = if fst (xs!!0) == fst (xs!!1) then Pair else HighCard
+                    | length theLongestStraight >= 5 && theLongestStraight == highestFlush = if fst (last theLongestStraight) == Ace then RoyalFlush else StraightFlush
+                    | length highestKind == 4 = FourOfAKind
+                    | length highestKind == 3 && length (getMaxSizeList (delete highestKind groupedByKind)) >= 2 = FullHouse
+                    | length highestFlush >= 5 = Flush
+                    | length theLongestStraight >= 5 = Straight
+                    | length highestKind == 3 = ThreeOfAKind
+                    | length highestKind == 2 && length (getMaxSizeList (delete highestKind groupedByKind)) == 2 = TwoPair
+                    | length highestKind == 2 = Pair
+                    | otherwise = HighCard
+                    
       where
         sortedByKind = sortBy (\(a, _) (b, _)-> compare a b) xs
         groupedByKind = groupBy (\a b -> fst a == fst b) sortedByKind
-        groupedBySuit = groupBy (\a b -> snd a == snd b) (sortBy (\(_, a) (_, b)-> compare a b) xs)
+        groupedBySuit = groupBy (\a b -> snd a == snd b) (sortBy (\(_, a) (_, b)-> compare a b) sortedByKind)
+        theLongestStraight = longestStraight sortedByKind
+        highestFlush = getMaxSizeList groupedBySuit
+        highestKind = getMaxSizeList groupedByKind
 
 
     longestStraight :: [Card] -> [Card]
@@ -89,7 +101,7 @@ module HoldEm where
                             | length y > length x = getMaxSizeList (y:xs)
                             | otherwise = if fst (last x) > fst (last y) then getMaxSizeList (x:xs) else getMaxSizeList (y:xs)
 
-    data PokerHand = HighCard | TwoPair | ThreePair | Straight | Flush | FullHouse | FourOfAKind | StraightFlush | RoyalFlush
+    data PokerHand = HighCard | Pair | TwoPair | ThreeOfAKind| Straight | Flush | FullHouse | FourOfAKind | StraightFlush | RoyalFlush deriving(Show)
 
 
 
