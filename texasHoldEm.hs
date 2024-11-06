@@ -1,7 +1,7 @@
 
 module HoldEm where
-    import System.Random
-    import Data.List
+    import System.Random ( randomRIO )
+    import Data.List ( delete, groupBy, sortBy )
 
     data Suit = Hearts | Spades | Diamonds | Clubs   deriving(Show, Ord, Eq, Bounded, Enum)
     data CardVal = Two | Three | Four | Five | Six | Seven | Eight |
@@ -126,10 +126,6 @@ module HoldEm where
 
     kickerCardCompare :: [Card] -> [Card] -> Ordering
     kickerCardCompare xs ys = compare (map fst xs) (map fst ys)
-
-    -- instance Ord PokerHand where
-    --   compare hand1 hand2 | hand1 /= hand2 = compare hand1 hand2
-    --                       | otherwise = kickerCardCompare (cards hand1) (cards hand2)
 
     determineWinner :: GameState -> [(Player, PokerHand)]
     determineWinner state = winner : filter (\(_,a) -> kickerCardCompare (cards a) (cards (snd winner)) == EQ) (tail winnersRanked)
