@@ -1,7 +1,8 @@
 
 module HoldEm where
     import System.Random ( randomRIO )
-    import Data.List ( delete, groupBy, sortBy )
+    import Data.List ( delete, groupBy, sortBy, minimumBy )
+    import Control.Monad
 
     data Suit = Hearts | Spades | Diamonds | Clubs   deriving(Show, Ord, Eq, Bounded, Enum)
     data CardVal = LowAce | Two | Three | Four | Five | Six | Seven | Eight |
@@ -12,10 +13,10 @@ module HoldEm where
 
     type Card = (CardVal, Suit)
     type Deck = [Card]
-    data Strategy = RandomPlayer | AggressivePlayer | SmartPlayer deriving(Show)
+    data Strategy = RandomPlayer | AggressivePlayer | SmartPlayer deriving(Show, Eq)
 
     data Player = Player { name :: String, hand :: [Card], chips :: Int, isDealer :: Bool,
-      strategy :: Strategy} deriving(Show)
+      strategy :: Strategy} deriving(Show, Eq)
 
     type Bet = (Player, Int)
     type CurrentPlayers = [Player]
@@ -55,10 +56,13 @@ module HoldEm where
 
     type MyList = [Int]
 
+    randomInt :: Int -> Int -> IO Int
+    randomInt x y = randomRIO (x, y)
+
     shuffleNums :: [Int] -> IO [Int]
     shuffleNums [] = return []
     shuffleNums nums = do
-      ind <- randomRIO (0, length nums - 1)
+      ind <- randomInt 0 (length nums - 1)
       let outputList = [nums!!ind]
       rest <- shuffleNums (take ind nums ++ drop (ind+1) nums)
       return (outputList ++ rest)
@@ -145,79 +149,94 @@ module HoldEm where
     addLowAces (x:xs) | fst x == Ace = x :(LowAce, snd x) : addLowAces xs
                       | otherwise = x : addLowAces xs
 
-    -- main :: IO ()
-    -- main = do
-    --   let player1 = Player {name="wii matt", hand=[], chips=10, isDealer=False, strategy=RandomPlayer}
-    --   let player2 = Player {name="gwilym", hand=[], chips=10, isDealer=False, strategy=RandomPlayer}
-    --   let player3 = Player {name="miguel", hand=[], chips=10, isDealer=False, strategy=RandomPlayer}
-    --   let state = GameState {activePlayers=[player1, player2, player3], deck=generateDeck, communityCards=[], currentPot=0, bets=[], currentDealerIndex=0, smallBlind=10, bigBlind=20}
-    --   putStrLn "STARTING GAME"
-    --   gameLoop state
+    main :: IO ()
+    main = do
+      let player1 = Player {name="wii matt", hand=[], chips=10, isDealer=True, strategy=RandomPlayer}
+      let player2 = Player {name="gwilym", hand=[], chips=10, isDealer=False, strategy=RandomPlayer}
+      let player3 = Player {name="miguel", hand=[], chips=10, isDealer=False, strategy=RandomPlayer}
+      let state = GameState {activePlayers=[player1, player2, player3], deck=generateDeck, communityCards=[], currentPot=0, bets=[], currentDealerIndex=0, smallBlind=10, bigBlind=20}
+      putStrLn "STARTING GAME"
+      gameLoop state
 
-    -- gameLoop :: GameState -> IO ()
-    -- gameLoop = playRound
+    gameLoop :: GameState -> IO ()
+    gameLoop state = do
+      state <- playRound state
+      return ()
 
-    -- playRound :: GameState -> IO GameState
-    -- playRound state = do
-    --   putStrLn "STARTING NEW ROUND"
-    --   state <- return state { activePlayers = clearPlayerHands (activePlayers state)}
-    --   state <- shuffleDeck state
-    --   state <- dealCards Hole state
-    --   bettingRound state
+    playRound :: GameState -> IO GameState
+    playRound state = do
+      putStrLn "STARTING NEW ROUND"
+      state <- return state { activePlayers = clearPlayerHands (activePlayers state)}
+      state <- shuffleDeck state
+      state <- dealCards Hole state
+      bettingRound state
+      -- state <- dealCards Community state
+      -- state <- dealCards Community state
+      -- state <- dealCards Community state
+      
+    clearPlayerHands :: [Player] -> [Player]
+    clearPlayerHands ps = [x { hand = [] } | x <- ps]
 
-    -- clearPlayerHands :: [Player] -> [Player]
-    -- clearPlayerHands ps = [x { hand = [] } | x <- ps]
+    bettingRound :: GameState -> IO GameState
+    bettingRound state = do
+      let players = activePlayers state
+      let dealer = currentDealerIndex state + 1
+      let betsThisRound = [(x, 0) | x <- players]
+      let playersInBetOrder = take dealer players ++ drop dealer players
+      print playersInBetOrder
+      doPlayerBets state playersInBetOrder betsThisRound
+      return state
 
-    -- bettingRound :: GameState -> IO GameState
-    -- bettingRound state = do
-    --   let players = activePlayers state
-    --   let dealer = currentDealerIndex state + 1
-    --   let betsThisRound = [(x, 0) | x <- players]
-    --   let playersInBetOrder = take dealer players ++ drop dealer players
-    --   doPlayerBets state playersInBetOrder betsThisRound
-    --   return state
+    doPlayerBets :: GameState -> [Player] -> [Bet] -> IO GameState
+    doPlayerBets state ps bs = do
+       let iobets = [bet p bs | p <- ps]
+       nonioBets <- sequence iobets
+       return state {bets = filter (/= Nothing) nonioBets}
 
-    -- doPlayerBets :: GameState -> [Player] -> [Bet] -> IO GameState
-    -- doPlayerBets state ps bs = do
-    --    let iobets = [bet p bs | p <- ps]
-    --    nonioBets <- sequence iobets
-    --    return state {bets = filter (/= Nothing) nonioBets}
+    bet :: Player -> [Bet] -> IO (Maybe Bet)
+    bet p bs | strategy p == RandomPlayer = do betRandom p ourCurrentBet betToCall
+             | otherwise = return Nothing
+      where
+        betToCall = snd (minimumBy (\ (_, a) (_, b) -> compare b a) bs)
+        ourCurrentBet = snd (head (filter (\(a, _) -> a == p) bs))
 
-    -- bet :: Player -> [Bet] -> IO (Maybe Bet)
-    -- bet p bs | strategy p == RandomPlayer = do betRandom p ourCurrentBet betToCall
-    --          | otherwise = return Nothing
-    --   where
-    --     betToCall = snd (minimumBy (\ (_, a) (_, b) -> compare b a) bs)
-    --     ourCurrentBet = snd (head filter (\(a, _) -> a == p) bs)
+    randomPercentage :: IO Float
+    randomPercentage = do randomRIO (0.0, 1.0)
 
-    -- betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
-    -- betRandom player ourCurrentBet betToCall = do
-    --   foldChance <- randomRIO (1, 100)
-    --   if foldChance < 15 then return Nothing
-    --   else do
-    --     let chipsLeft = chips player
-    --         callToMake = betToCall - ourCurrentBet
-    --     if callToMake > chipsLeft then return Nothing
-    --     else do
-    --       let betAmount = callToMake
-    --       callOrRaiseChance <- randomRIO (1, 100)
-    --       if callOrRaiseChance > 0.5 then do
-    --         betAmountPercentage <- randomRIO (0.0, 1.0)
-    --         let raise = fromIntegral (round ((chips - callToMake)*betAmountPercentage))
-    --             totalAmountBet = betAmount + raise
-    --         putStr (name player)
-    --         putStr " HAS BETTED "
-    --         putStr (show totalAmountBet)
-    --         if callToMake /= 0 then
-    --           putStr "TO RAISE BY "
-    --           putStrLn (show raise)
-    --         else putStr ()
-    --       else do
-    --         putStr (name player)
-    --         putStr " HAS BETTED "
-    --         putStr betAmount
-    --         if callToMake /= 0 then
-    --           putStrLn " TO CALL"
-    --         else
-    --           putStr ()
-    --         return Just (player, betAmount)
+    betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
+    betRandom player ourCurrentBet betToCall = do
+      putStrLn ""
+      foldChance <- randomInt 1 100
+      if foldChance < 15 then return Nothing
+      else do
+
+        let chipsLeft = chips player
+            callToMake = betToCall - ourCurrentBet
+        if callToMake > chipsLeft then return Nothing
+        else do
+
+          let betAmount = callToMake
+          callOrRaiseChance <- randomInt 1 100
+
+          if callOrRaiseChance > 50 then do
+
+            amountRaisedPercentage <- randomPercentage
+            let raise = round (fromIntegral (chips player - callToMake)*amountRaisedPercentage)
+                totalAmountBet = betAmount + raise
+            putStr (name player)
+            putStr " HAS BET "
+            putStr (show totalAmountBet)
+            when (callToMake /= 0) $ do
+              putStr "TO RAISE BY "
+              print raise
+            let bet = Just (player, betAmount)
+            return bet
+          else do
+
+            putStr (name player)
+            putStr " HAS BET "
+            print betAmount
+            when (callToMake /= 0) $ do
+              putStrLn " TO CALL"
+            let bet = Just (player, betAmount)
+            return bet
