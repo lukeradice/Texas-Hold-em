@@ -185,14 +185,21 @@ module HoldEm where
       let dealer = currentDealerIndex state + 1
       let betsThisRound = [(x, 0) | x <- players]
       let playersInBetOrder = take dealer players ++ drop dealer players
+      -- print playersInBetOrder
       doPlayerBets state playersInBetOrder betsThisRound
       return state
 
     doPlayerBets :: GameState -> [Player] -> [Bet] -> IO [Bet]
-    doPlayerBets state [] bs = do return bs
+    doPlayerBets state [] bs = do 
+      let playersStillIn = activePlayers state
+      let highestBet = getBetToCall bs
+      let playersWhoNeedToCall = [pc | (pc, bet) <- bs, elem pc playersStillIn && bet < highestBet]
+      if length playersWhoNeedToCall == 0 then do return bs
+      else doPlayerBets state playersWhoNeedToCall bs
     doPlayerBets state (p:ps) bs = do
           playerBet <- bet p bs
           if playerBet == Nothing then do
+            state <- return state {activePlayers = delete p (activePlayers state)}
             doPlayerBets state ps bs
           else do
             let theBet = fromMaybe (p, 0) playerBet
@@ -212,8 +219,12 @@ module HoldEm where
                   return bet
              | otherwise = return Nothing
       where
-        betToCall = snd (minimumBy (\ (_, a) (_, b) -> compare b a) bs)
+        betToCall = getBetToCall bs
         ourCurrentBet = snd (head (filter (\(a, _) -> a == p) bs))
+
+    getBetToCall :: [Bet] -> Int
+    getBetToCall bs = snd (minimumBy (\ (_, a) (_, b) -> compare b a) bs)
+
 
     randomPercentage :: IO Float
     randomPercentage = do randomRIO (0.0, 1.0)
