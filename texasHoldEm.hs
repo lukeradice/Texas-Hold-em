@@ -2,6 +2,7 @@
 module HoldEm where
     import System.Random ( randomRIO )
     import Data.List ( delete, groupBy, sortBy, minimumBy )
+    import Data.Maybe (fromMaybe)
     import Control.Monad
 
     data Suit = Hearts | Spades | Diamonds | Clubs   deriving(Show, Ord, Eq, Bounded, Enum)
@@ -22,7 +23,7 @@ module HoldEm where
     type CurrentPlayers = [Player]
 
     data GameState = GameState { activePlayers :: CurrentPlayers , deck :: Deck, communityCards :: [Card],
-      currentPot :: Int, bets :: [Maybe Bet], currentDealerIndex :: Int, smallBlind :: Int,
+      currentPot :: Int, bets :: [Bet], currentDealerIndex :: Int, smallBlind :: Int,
       bigBlind :: Int} deriving(Show)
 
     data Deal = Community | Hole  deriving(Eq)
@@ -161,6 +162,7 @@ module HoldEm where
     gameLoop :: GameState -> IO ()
     gameLoop state = do
       state <- playRound state
+      -- print state
       return ()
 
     playRound :: GameState -> IO GameState
@@ -173,7 +175,7 @@ module HoldEm where
       -- state <- dealCards Community state
       -- state <- dealCards Community state
       -- state <- dealCards Community state
-      
+
     clearPlayerHands :: [Player] -> [Player]
     clearPlayerHands ps = [x { hand = [] } | x <- ps]
 
@@ -183,18 +185,31 @@ module HoldEm where
       let dealer = currentDealerIndex state + 1
       let betsThisRound = [(x, 0) | x <- players]
       let playersInBetOrder = take dealer players ++ drop dealer players
-      print playersInBetOrder
       doPlayerBets state playersInBetOrder betsThisRound
       return state
 
-    doPlayerBets :: GameState -> [Player] -> [Bet] -> IO GameState
-    doPlayerBets state ps bs = do
-       let iobets = [bet p bs | p <- ps]
-       nonioBets <- sequence iobets
-       return state {bets = filter (/= Nothing) nonioBets}
+    doPlayerBets :: GameState -> [Player] -> [Bet] -> IO [Bet]
+    doPlayerBets state [] bs = do return bs
+    doPlayerBets state (p:ps) bs = do
+          playerBet <- bet p bs
+          if playerBet == Nothing then do
+            doPlayerBets state ps bs
+          else do
+            let theBet = fromMaybe (p, 0) playerBet
+            let updatedBets = updateBetValue bs theBet 
+            doPlayerBets state ps (updatedBets)
+
+    updateBetValue :: [Bet] -> Bet -> [Bet]
+    updateBetValue bs b = map (\(a, v) -> if a == fst b then (a, v + betVal) else (a, v)) bs
+      where betVal = snd b
 
     bet :: Player -> [Bet] -> IO (Maybe Bet)
-    bet p bs | strategy p == RandomPlayer = do betRandom p ourCurrentBet betToCall
+    bet p bs | strategy p == RandomPlayer = do
+                  bet <- betRandom p ourCurrentBet betToCall
+                  when (bet == Nothing) $ do
+                          putStr (name p)
+                          putStrLn " HAS FOLDED"
+                  return bet
              | otherwise = return Nothing
       where
         betToCall = snd (minimumBy (\ (_, a) (_, b) -> compare b a) bs)
@@ -206,6 +221,8 @@ module HoldEm where
     betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
     betRandom player ourCurrentBet betToCall = do
       putStrLn ""
+      putStr "bet to call is"
+      print betToCall
       foldChance <- randomInt 1 100
       if foldChance < 15 then return Nothing
       else do
@@ -221,22 +238,27 @@ module HoldEm where
           if callOrRaiseChance > 50 then do
 
             amountRaisedPercentage <- randomPercentage
-            let raise = round (fromIntegral (chips player - callToMake)*amountRaisedPercentage)
+            let raise = ceiling (fromIntegral (chips player - callToMake)*amountRaisedPercentage)
                 totalAmountBet = betAmount + raise
+
             putStr (name player)
             putStr " HAS BET "
-            putStr (show totalAmountBet)
+            print totalAmountBet
             when (callToMake /= 0) $ do
               putStr "TO RAISE BY "
               print raise
-            let bet = Just (player, betAmount)
+            let bet = Just (player, totalAmountBet)
             return bet
           else do
 
             putStr (name player)
-            putStr " HAS BET "
-            print betAmount
-            when (callToMake /= 0) $ do
-              putStrLn " TO CALL"
+            if betAmount == 0 then do
+              putStrLn " HAS CHECKED"
+            else do
+              putStr " HAS BET "
+              print betAmount
+              when (callToMake /= 0) $ do
+                putStrLn " TO CALL"
+
             let bet = Just (player, betAmount)
             return bet
