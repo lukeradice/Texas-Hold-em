@@ -187,15 +187,24 @@ module HoldEm where
       let playersInBetOrder = take dealer players ++ drop dealer players
       -- print playersInBetOrder
       doPlayerBets state playersInBetOrder betsThisRound
-      return state
+      return state 
+
+    substituteChips :: [Player] -> [Bet] -> [Player]
+    substituteChips ps bs = [fst b | b <- bs, hand (fst b) `elem` playerHands]
+      where
+        playerHands = [hand p | p <- ps]
 
     doPlayerBets :: GameState -> [Player] -> [Bet] -> IO [Bet]
-    doPlayerBets state [] bs = do 
+    doPlayerBets state [] bs = do
+      -- print bs
+      state <- return state {activePlayers = substituteChips (activePlayers state) bs}
+      print state
       let playersStillIn = activePlayers state
-      let highestBet = getBetToCall bs
-      let playersWhoNeedToCall = [pc | (pc, bet) <- bs, elem pc playersStillIn && bet < highestBet]
-      if length playersWhoNeedToCall == 0 then do return bs
+          highestBet = getBetToCall bs
+          playersWhoNeedToCall = [pc | (pc, bet) <- bs, elem pc playersStillIn && bet < highestBet]
+      if null playersWhoNeedToCall then do return bs
       else doPlayerBets state playersWhoNeedToCall bs
+
     doPlayerBets state (p:ps) bs = do
           playerBet <- bet p bs
           if playerBet == Nothing then do
@@ -203,11 +212,11 @@ module HoldEm where
             doPlayerBets state ps bs
           else do
             let theBet = fromMaybe (p, 0) playerBet
-            let updatedBets = updateBetValue bs theBet 
+            let updatedBets = updateBetValue bs theBet
             doPlayerBets state ps (updatedBets)
 
     updateBetValue :: [Bet] -> Bet -> [Bet]
-    updateBetValue bs b = map (\(a, v) -> if a == fst b then (a, v + betVal) else (a, v)) bs
+    updateBetValue bs b = map (\(a, v) -> if a == fst b then (a {chips = chips a - betVal}, v + betVal) else (a, v)) bs
       where betVal = snd b
 
     bet :: Player -> [Bet] -> IO (Maybe Bet)
@@ -258,6 +267,7 @@ module HoldEm where
             when (callToMake /= 0) $ do
               putStr "TO RAISE BY "
               print raise
+            -- player <- return player {chips = chipsLeft - totalAmountBet}
             let bet = Just (player, totalAmountBet)
             return bet
           else do
@@ -271,5 +281,6 @@ module HoldEm where
               when (callToMake /= 0) $ do
                 putStrLn " TO CALL"
 
+            -- player <- return player {chips = chipsLeft - betAmount}
             let bet = Just (player, betAmount)
             return bet
