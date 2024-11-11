@@ -185,37 +185,50 @@ module HoldEm where
     bettingRound state = do
       let players = nonBustPlayers state
           dealer = currentDealerIndex state + 1
-          -- betsThisRound = [(x, 0) | x <- players]
       state <- return state {bets = [(x, 0) | x <- players]}
       let playersInBetOrder = take dealer players ++ drop dealer players
-      doPlayerBets state playersInBetOrder 
+      doPlayerBets state playersInBetOrder
       return state
 
     doPlayerBets :: GameState -> [Player] -> IO GameState
     doPlayerBets state [] = do
-      let playersStillIn = [p | (i, p) <- zip [0..] (nonBustPlayers state), i `elem` playersInRound state]
+      let playersStillIn = preserveTurnOrder [p | (i, p) <- zip [0..] (nonBustPlayers state), i `elem` playersInRound state] (bets state)
           highestBet = getBetToCall (bets state)
           playersWhoNeedToCall = [pc | (pc, bet) <- bets state, elem pc playersStillIn && bet < highestBet]
-      -- print(bets state)
-      -- print(playersWhoNeedToCall)
+
       if null playersWhoNeedToCall then do
         return state {playersInRound = [0..length (nonBustPlayers state) -1]}
       else
         doPlayerBets state playersWhoNeedToCall
 
     doPlayerBets state (p:ps) = do
-          -- print (bs == bets state)
           playerBet <- bet p (bets state)
           let playerIndex = getPlayerIndex p (nonBustPlayers state)
           if playerBet == Nothing then do
             state <- return state {playersInRound = delete playerIndex (playersInRound state) }
-            doPlayerBets state ps 
+            doPlayerBets state ps
           else do
             let theBet = fromMaybe (p, 0) playerBet
             let updatedBets = updateBetValue (bets state) theBet
             let outdatedNonBustPlayers = nonBustPlayers state
             state <- return state {nonBustPlayers = updatePlayersChips playerIndex theBet outdatedNonBustPlayers, bets = updatedBets}
-            doPlayerBets state ps 
+            doPlayerBets state ps
+    
+    bet :: Player -> [Bet] -> IO (Maybe Bet)
+    bet p bs | strategy p == RandomPlayer = do
+                  bet <- betRandom p ourCurrentBet betToCall
+                  when (bet == Nothing) $ do
+                          putStr (name p)
+                          putStrLn " HAS FOLDED"
+                  return bet
+             | otherwise = return Nothing
+      where
+        betToCall = getBetToCall bs
+        ourCurrentBet = snd (head (filter (\(a, _) -> a == p) bs))
+
+    preserveTurnOrder :: [Player] -> [Bet] -> [Player]
+    preserveTurnOrder ps bs = take lastBetIndex ps ++ drop lastBetIndex ps
+      where lastBetIndex = head [i | (i, p) <- zip [0..] ps, p == fst (last bs)]
 
     updatePlayersChips :: Int -> Bet -> [Player] -> [Player]
     updatePlayersChips plIndex bet outdatedNonBustPlayers = take plIndex outdatedNonBustPlayers ++ [fst bet] ++ drop (plIndex+1) outdatedNonBustPlayers
@@ -229,21 +242,8 @@ module HoldEm where
     updateBetValue bs b = map (\(a, v) -> if hand a == hand (fst b) then (fst b, v + snd b) else (a, v)) bs
       where betVal = snd b
 
-    bet :: Player -> [Bet] -> IO (Maybe Bet)
-    bet p bs | strategy p == RandomPlayer = do
-                  bet <- betRandom p ourCurrentBet betToCall
-                  when (bet == Nothing) $ do
-                          putStr (name p)
-                          putStrLn " HAS FOLDED"
-                  return bet
-             | otherwise = return Nothing
-      where
-        betToCall = getBetToCall bs
-        ourCurrentBet = snd (head (filter (\(a, _) -> a == p) bs))
-
     getBetToCall :: [Bet] -> Int
     getBetToCall bs = snd (minimumBy (\ (_, a) (_, b) -> compare b a) bs)
-
 
     randomPercentage :: IO Float
     randomPercentage = do randomRIO (0.0, 1.0)
