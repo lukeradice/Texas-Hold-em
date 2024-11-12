@@ -7,27 +7,57 @@ module HoldEm where
     import Data.Maybe (fromMaybe)
     import Control.Monad
 
-    data Suit = Hearts | Spades | Diamonds | Clubs   deriving(Show, Ord, Eq, Bounded, Enum)
-    data CardVal = LowAce | Two | Three | Four | Five | Six | Seven | Eight |
-      Nine | Ten | Jack | Queen | King | Ace  deriving(Show, Ord,  Eq, Bounded, Enum)
+    data Suit = Hearts 
+              | Spades 
+              | Diamonds 
+              | Clubs deriving(Show, Ord, Eq, Bounded, Enum)
+
+    data CardVal = LowAce 
+                | Two 
+                | Three 
+                | Four 
+                | Five 
+                | Six 
+                | Seven 
+                | Eight 
+                | Nine 
+                | Ten 
+                | Jack 
+                | Queen 
+                | King 
+                | Ace  deriving(Show, Ord,  Eq, Bounded, Enum)
 
     generateDeck :: Deck
-    generateDeck = [(cardVal, suit) | suit <- [succ (minBound :: Suit) ..], cardVal <- [succ (minBound :: CardVal) ..]]
+    generateDeck = [(val, suit) | suit <- [succ (minBound :: Suit) ..], 
+                      val <- [succ (minBound :: CardVal) ..]]
 
     type Card = (CardVal, Suit)
-    type Deck = [Card]
-    data Strategy = RandomPlayer | AggressivePlayer | SmartPlayer deriving(Show, Eq)
 
-    data Player = Player { name :: String, hand :: [Card], chips :: Int, isDealer :: Bool,
-      strategy :: Strategy} deriving(Show, Eq)
+    type Deck = [Card]
+
+    data Strategy = RandomPlayer 
+                  | AggressivePlayer 
+                  | SmartPlayer deriving(Show, Eq)
+
+    data Player = Player { name :: String, 
+                           hand :: [Card], 
+                           chips :: Int, 
+                           strategy :: Strategy} deriving(Show, Eq)
 
     type Bet = (Player, Int)
 
-    data GameState = GameState { nonBustPlayers :: [Player], playersInRound :: [Int], deck :: Deck, communityCards :: [Card],
-      currentPot :: Int, bets :: [Bet], currentDealerIndex :: Int, smallBlind :: Int,
-      bigBlind :: Int} deriving(Show)
+    data GameState = GameState { nonBustPlayers :: [Player], 
+                                 playersInRound :: [Int], 
+                                 deck :: Deck, 
+                                 communityCards :: [Card],
+                                 currentPot :: Int, 
+                                 bets :: [Bet], 
+                                 currentDealerIndex :: Int, 
+                                 smallBlind :: Int,
+                                 bigBlind :: Int} deriving(Show)
 
     data Deal = Community | Hole  deriving(Eq)
+
     dealCards :: Deal -> GameState -> IO GameState
     dealCards deal state = do
       if deal == Hole then return
@@ -36,13 +66,15 @@ module HoldEm where
           deck = drop (2*length thePlayers) theDeck}
       else
        if null theComCards then
-        return state { deck = drop 3 theDeck,
-                communityCards = take 3 theDeck,
-                nonBustPlayers = dealToPlayersCommunity thePlayers (take 3 theDeck) }
+        return state { 
+           deck = drop 3 theDeck,
+           communityCards = take 3 theDeck,
+           nonBustPlayers = dealToPlayersCommunity thePlayers (take 3 theDeck) }
        else
-        return state { deck = tail theDeck,
-                      communityCards = theComCards ++ [head theDeck],
-                      nonBustPlayers = dealToPlayersCommunity thePlayers [head theDeck] }
+        return state { 
+             deck = tail theDeck,
+             communityCards = theComCards ++ [head theDeck],
+             nonBustPlayers = dealToPlayersCommunity thePlayers [head theDeck] }
       where
         theDeck = deck state
         thePlayers = nonBustPlayers state
@@ -50,11 +82,13 @@ module HoldEm where
 
     dealToPlayersHole :: [Player] -> Deck -> [Player]
     dealToPlayersHole [] deck = []
-    dealToPlayersHole (p:ps) (c1:c2:cs) = p { hand = hand p ++ [c1, c2] } : dealToPlayersHole ps cs
+    dealToPlayersHole (p:ps) (c1:c2:cs) = p { hand = hand p ++ [c1, c2] } 
+                                          : dealToPlayersHole ps cs
 
     dealToPlayersCommunity :: [Player] -> [Card] -> [Player]
     dealToPlayersCommunity[] deck = []
-    dealToPlayersCommunity (p:ps) cs= p { hand = hand p ++ cs} : dealToPlayersCommunity ps cs
+    dealToPlayersCommunity (p:ps) cs= p { hand = hand p ++ cs} 
+                                      : dealToPlayersCommunity ps cs
 
     type MyList = [Int]
 
@@ -76,31 +110,54 @@ module HoldEm where
       let newDeck = [theDeck !! i | i <- randomIndicies]
       return state { deck = newDeck }
 
-    data PokerHand = HighCard {cards :: [Card]} | Pair {cards :: [Card]} | TwoPair {cards :: [Card]} | ThreeOfAKind {cards :: [Card]} | Straight {cards :: [Card]} |
-     Flush {cards :: [Card]} | FullHouse {cards :: [Card]} | FourOfAKind {cards :: [Card]} | StraightFlush {cards :: [Card]} | RoyalFlush {cards :: [Card]} deriving(Show, Eq, Ord)
+    data PokerHand = HighCard {cards :: [Card]}
+                   | Pair {cards :: [Card]}
+                   | TwoPair {cards :: [Card]}
+                   | ThreeOfAKind {cards :: [Card]}
+                   | Straight {cards :: [Card]}
+                   | Flush {cards :: [Card]}
+                   | FullHouse {cards :: [Card]}
+                   | FourOfAKind {cards :: [Card]}
+                   | StraightFlush {cards :: [Card]}
+                   | RoyalFlush {cards :: [Card]} deriving(Show, Eq, Ord)
 
     evaluateHand :: [Card] -> PokerHand
     evaluateHand xs | length xs == 2 = evaluateHoleHand xs
-                    | length theLongestStraight >= 5 && theLongestStraight == highestFlush = defineTypeOfStraightFlush xs theLongestStraight
-                    | length highestKind == 4 = FourOfAKind highestKind
-                    | length highestKind == 3 && length secondHighestKind >= 2 = FullHouse (highestKind ++ drop (length theLongestStraight - 2) secondHighestKind)
-                    | length highestFlush >= 5 = Flush (drop (length highestFlush - 5) highestFlush)
-                    | length theLongestStraight >= 5 = Straight (drop (length theLongestStraight - 5) theLongestStraight)
-                    | length highestKind == 3 = ThreeOfAKind highestKind
-                    | length highestKind == 2 && length secondHighestKind == 2 = TwoPair (returnTwoPairHand highestKind secondHighestKind groupedByKindWithoutHighestKind)
-                    | length highestKind == 2 = Pair (highestKind ++ concat groupedByKindWithoutHighestKind)
-                    | otherwise = HighCard sortedByKind
+                    | length longestStraight >= 5 &&
+                      longestStraight == highestFlush =
+                        getTypeOfStraightFlush xs longestStraight
+                    | length highestKind == 4 =
+                        FourOfAKind highestKind
+                    | length highestKind == 3 &&
+                      length sndHighestKind >= 2 =
+                        FullHouse (highestKind ++
+                          drop (length sndHighestKind - 2) sndHighestKind)
+                    | length highestFlush >= 5 =
+                        Flush (drop (length highestFlush - 5) highestFlush)
+                    | length longestStraight >= 5 =
+                        Straight (
+                            drop (length longestStraight - 5) longestStraight)
+                    | length highestKind == 3 =
+                        ThreeOfAKind (highestKind ++
+                          concat kindsGroupedWithoutHighest)
+                    | length highestKind == 2 && 
+                      length sndHighestKind == 2 = 
+                        TwoPair (
+           getTwoPairHand highestKind sndHighestKind kindsGroupedWithoutHighest)
+                    | length highestKind == 2 = 
+                        Pair (highestKind ++ concat kindsGroupedWithoutHighest)
+                    | otherwise = HighCard kindsSorted
 
       where
-        sortedByKind = sortByKind xs
-        groupedByKind = groupBy (\a b -> fst a == fst b) sortedByKind
-        groupedBySuit = groupBy (\a b -> snd a == snd b) (sortBy (\(_, a) (_, b)-> compare a b) sortedByKind)
-        theLongestStraight = longestStraight (sortByKind (addLowAces xs))
-        highestFlush = getMaxSizeList groupedBySuit
-        highestKind = getMaxSizeList groupedByKind
-        groupedByKindWithoutHighestKind = delete highestKind groupedByKind
-        secondHighestKind = getMaxSizeList groupedByKindWithoutHighestKind
-
+        kindsSorted = sortByKind xs
+        kindsGrouped = groupBy (\a b -> fst a == fst b) kindsSorted
+        suitsGrouped = groupBy (\a b -> snd a == snd b) 
+                             (sortBy (\(_, a) (_, b)-> compare a b) kindsSorted)
+        longestStraight = getLongestStraight (sortByKind (addLowAces xs))
+        highestFlush = getMaxSizeList suitsGrouped
+        highestKind = getMaxSizeList kindsGrouped
+        kindsGroupedWithoutHighest = delete highestKind kindsGrouped
+        sndHighestKind = getMaxSizeList kindsGroupedWithoutHighest
 
     sortByKind :: [Card] -> [Card]
     sortByKind = sortBy (\(a, _) (b, _)-> compare a b)
@@ -110,22 +167,28 @@ module HoldEm where
                         | fst (head xs) > fst (xs!!1) = HighCard [head xs]
                         | otherwise = HighCard [xs!!1]
 
-    defineTypeOfStraightFlush :: [Card] -> [Card] -> PokerHand
-    defineTypeOfStraightFlush xs theLongestStraight | fst (last theLongestStraight) == Ace = RoyalFlush theLongestStraight
-                                                | otherwise = StraightFlush theLongestStraight
+    getTypeOfStraightFlush :: [Card] -> [Card] -> PokerHand
+    getTypeOfStraightFlush xs straight | fst (last straight) == Ace = 
+                                          RoyalFlush straight
+                                       | otherwise = 
+                                          StraightFlush straight
 
-    returnTwoPairHand :: [Card] -> [Card] -> [[Card]] -> [Card]
-    returnTwoPairHand highestKind secondHighestKind groupedByKindWithoutHighestKind =
-      highestKind ++ secondHighestKind ++ getMaxSizeList (delete secondHighestKind groupedByKindWithoutHighestKind)
+    getTwoPairHand :: [Card] -> [Card] -> [[Card]] -> [Card]
+    getTwoPairHand highestKind sndHighestKind kindsGroupedWithoutHighest =
+      highestKind ++ 
+      sndHighestKind ++ 
+      getMaxSizeList (delete sndHighestKind kindsGroupedWithoutHighest)
 
-    longestStraight :: [Card] -> [Card]
-    longestStraight xs = getMaxSizeList groupedByStraight
+    getLongestStraight :: [Card] -> [Card]
+    getLongestStraight xs = getMaxSizeList groupedByStraight
       where groupedByStraight = groupByStraight (map (\x -> [x]) xs)
 
     groupByStraight :: [[Card]] -> [[Card]]
     groupByStraight [x] = [x]
-    groupByStraight (x:y:xs) | (xVal /= maxBound) && (succ xVal == yVal) = groupByStraight ((x ++ y) : xs)
-                             | otherwise = x : groupByStraight (y:xs)
+    groupByStraight (x:y:xs) | (xVal /= maxBound) && (succ xVal == yVal) = 
+                                groupByStraight ((x ++ y) : xs)
+                             | otherwise = 
+                                x : groupByStraight (y:xs)
       where
         xVal = fst (last x)
         yVal = fst (last y)
@@ -134,13 +197,18 @@ module HoldEm where
     getMaxSizeList [x] = x
     getMaxSizeList (x:y:xs) | length x > length y = getMaxSizeList (x:xs)
                             | length y > length x = getMaxSizeList (y:xs)
-                            | otherwise = if fst (last x) > fst (last y) then getMaxSizeList (x:xs) else getMaxSizeList (y:xs)
+                            | otherwise = 
+                                if fst (last x) > fst (last y) then 
+                                  getMaxSizeList (x:xs) 
+                                else getMaxSizeList (y:xs)
 
     kickerCardCompare :: [Card] -> [Card] -> Ordering
     kickerCardCompare xs ys = compare (map fst xs) (map fst ys)
 
     determineWinner :: GameState -> [(Player, PokerHand)]
-    determineWinner state = winner : filter (\(_,a) -> kickerCardCompare (cards a) (cards (snd winner)) == EQ) (tail winnersRanked)
+    determineWinner state = winner : filter 
+              (\(_,a) -> kickerCardCompare (cards a) (cards (snd winner)) == EQ) 
+              (tail winnersRanked)
       where
         hands = [(x, evaluateHand (hand x)) | x <- nonBustPlayers state]
         winnersRanked = sortBy (\(_, a) (_, b)-> compare b a)  hands
@@ -153,11 +221,22 @@ module HoldEm where
 
     main :: IO ()
     main = do
-      let player1 = Player {name="wii matt", hand=[], chips=100, isDealer=True, strategy=RandomPlayer}
-          player2 = Player {name="gwilym", hand=[], chips=100, isDealer=False, strategy=RandomPlayer}
-          player3 = Player {name="miguel", hand=[], chips=100, isDealer=False, strategy=RandomPlayer}
+      let player1 = Player {name="wii matt", hand=[], chips=100, 
+                            strategy=RandomPlayer}
+          player2 = Player {name="gwilym", hand=[], chips=100, 
+                            strategy=RandomPlayer}
+          player3 = Player {name="miguel", hand=[], chips=100, 
+                            strategy=RandomPlayer}
           players = [player1, player2, player3]
-          state = GameState {nonBustPlayers=players, playersInRound=[0..length players -1], deck=generateDeck, communityCards=[], currentPot=0, bets=[], currentDealerIndex=0, smallBlind=10, bigBlind=20}
+          state = GameState {nonBustPlayers=players, 
+                             playersInRound=[0..length players -1], 
+                             deck=generateDeck, 
+                             communityCards=[], 
+                             currentPot=0, 
+                             bets=[], 
+                             currentDealerIndex=0, 
+                             smallBlind=10, 
+                             bigBlind=20}
       putStrLn (concat (replicate 100 "*"))
       putStrLn "STARTING GAME"
       gameLoop state
@@ -170,7 +249,8 @@ module HoldEm where
     playRound :: GameState -> IO GameState
     playRound state = do
       putStrLn "STARTING NEW ROUND"
-      state <- return state { nonBustPlayers = clearPlayerHands (nonBustPlayers state)}
+      state <- return state { nonBustPlayers = 
+                                clearPlayerHands (nonBustPlayers state)}
       state <- shuffleDeck state
       state <- dealCards Hole state
       bettingRound state
@@ -184,18 +264,24 @@ module HoldEm where
     bettingRound :: GameState -> IO GameState
     bettingRound state = do
       let players = nonBustPlayers state
-          dealer = currentDealerIndex state + 1
+          dealer = currentDealerIndex state 
+          playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
       state <- return state {bets = [(x, 0) | x <- players]}
-      let playersInBetOrder = take dealer players ++ drop dealer players
+      print players
+      print playersInBetOrder 
       doPlayerBets state playersInBetOrder
       return state
 
     doPlayerBets :: GameState -> [Player] -> IO GameState
     doPlayerBets state [] = do
-      let playersStillIn = preserveTurnOrder [p | (i, p) <- zip [0..] (nonBustPlayers state), i `elem` playersInRound state] (bets state)
+      let playersStillIn = 
+              correctTurnOrder [p | (i, p) <- zip [0..] (nonBustPlayers state), 
+                                  i `elem` playersInRound state] (bets state)
           highestBet = getBetToCall (bets state)
-          playersWhoNeedToCall = [pc | (pc, bet) <- bets state, elem pc playersStillIn && bet < highestBet]
+          playersWhoNeedToCall = [pc | (pc, bet) <- bets state, 
+                                 elem pc playersStillIn && bet < snd highestBet]
 
+      print playersStillIn
       if null playersWhoNeedToCall then do
         return state {playersInRound = [0..length (nonBustPlayers state) -1]}
       else
@@ -204,16 +290,21 @@ module HoldEm where
     doPlayerBets state (p:ps) = do
           playerBet <- bet p (bets state)
           let playerIndex = getPlayerIndex p (nonBustPlayers state)
+          print playerIndex
           if playerBet == Nothing then do
-            state <- return state {playersInRound = delete playerIndex (playersInRound state) }
+            state <- return state {playersInRound = 
+                                     delete playerIndex (playersInRound state) }
             doPlayerBets state ps
           else do
             let theBet = fromMaybe (p, 0) playerBet
-            let updatedBets = updateBetValue (bets state) theBet
-            let outdatedNonBustPlayers = nonBustPlayers state
-            state <- return state {nonBustPlayers = updatePlayersChips playerIndex theBet outdatedNonBustPlayers, bets = updatedBets}
+                updatedBets = updateBetValue (bets state) theBet
+                outdatedNonBustPlayers = nonBustPlayers state
+            state <- return state {
+              nonBustPlayers = 
+                   updatePlayersChips playerIndex theBet outdatedNonBustPlayers, 
+              bets = updatedBets }
             doPlayerBets state ps
-    
+
     bet :: Player -> [Bet] -> IO (Maybe Bet)
     bet p bs | strategy p == RandomPlayer = do
                   bet <- betRandom p ourCurrentBet betToCall
@@ -223,15 +314,20 @@ module HoldEm where
                   return bet
              | otherwise = return Nothing
       where
-        betToCall = getBetToCall bs
+        betToCall = snd (getBetToCall bs)
         ourCurrentBet = snd (head (filter (\(a, _) -> a == p) bs))
 
-    preserveTurnOrder :: [Player] -> [Bet] -> [Player]
-    preserveTurnOrder ps bs = take lastBetIndex ps ++ drop lastBetIndex ps
-      where lastBetIndex = head [i | (i, p) <- zip [0..] ps, p == fst (last bs)]
+    correctTurnOrder :: [Player] -> [Bet] -> [Player]
+    correctTurnOrder ps bs = drop (lastBetIndex+1) ps ++ take (lastBetIndex+1) ps
+      where 
+        highestBet = getBetToCall bs
+        lastBetIndex = head [i | (i, p) <- zip [0..] ps, p == fst highestBet]
 
     updatePlayersChips :: Int -> Bet -> [Player] -> [Player]
-    updatePlayersChips plIndex bet outdatedNonBustPlayers = take plIndex outdatedNonBustPlayers ++ [fst bet] ++ drop (plIndex+1) outdatedNonBustPlayers
+    updatePlayersChips plIndex bet outdatedNonBustPlayers = 
+        take plIndex outdatedNonBustPlayers ++ 
+        [fst bet] ++ 
+        drop (plIndex+1) outdatedNonBustPlayers
 
     getPlayerIndex :: Player -> [Player] -> Int
     getPlayerIndex pl [] = error "no player"
@@ -239,14 +335,19 @@ module HoldEm where
                              |  otherwise = 1 + getPlayerIndex pl ps
 
     updateBetValue :: [Bet] -> Bet -> [Bet]
-    updateBetValue bs b = map (\(a, v) -> if hand a == hand (fst b) then (fst b, v + snd b) else (a, v)) bs
+    updateBetValue bs b = map (\(a, v) -> if hand a == hand (fst b) then 
+                                            (fst b, v + snd b) 
+                                          else (a, v)) bs
       where betVal = snd b
 
-    getBetToCall :: [Bet] -> Int
-    getBetToCall bs = snd (minimumBy (\ (_, a) (_, b) -> compare b a) bs)
+    getBetToCall :: [Bet] -> Bet
+    getBetToCall bs = minimumBy (\ (_, a) (_, b) -> compare b a) bs
 
     randomPercentage :: IO Float
     randomPercentage = do randomRIO (0.0, 1.0)
+
+    damper :: Float
+    damper = 0.85
 
     betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
     betRandom player ourCurrentBet betToCall = do
@@ -268,7 +369,8 @@ module HoldEm where
           if chipsLeft /= callToMake && callOrRaiseChance > 50 then do
 
             amountRaisedPercentage <- randomPercentage
-            let raise = ceiling (fromIntegral (chips player - callToMake)*amountRaisedPercentage)
+            let raise = ceiling (fromIntegral 
+                      (chips player - callToMake)*amountRaisedPercentage*damper)
                 totalAmountBet = betAmount + raise
 
             putStr (name player)
