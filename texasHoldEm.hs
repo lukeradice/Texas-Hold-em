@@ -131,26 +131,29 @@ module HoldEm where
                       longestStraight == highestFlush =
                         getTypeOfStraightFlush xs longestStraight
                     | length highestKind == 4 =
-                        FourOfAKind highestKind
+                        FourOfAKind (take 5 (highestKind ++
+                          concat kindsGroupedWithoutHighest))
                     | length highestKind == 3 &&
                       length sndHighestKind >= 2 =
-                        FullHouse (highestKind ++
-                          drop (length sndHighestKind - 2) sndHighestKind)
+                        FullHouse (take 5 (highestKind ++
+                          drop (length sndHighestKind - 2) sndHighestKind))
                     | length highestFlush >= 5 =
-                        Flush (drop (length highestFlush - 5) highestFlush)
+                        Flush (take 5
+                            (drop (length highestFlush - 5) highestFlush))
                     | length longestStraight >= 5 =
-                        Straight (
-                            drop (length longestStraight - 5) longestStraight)
+                        Straight (take 5 (
+                            drop (length longestStraight - 5) longestStraight))
                     | length highestKind == 3 =
-                        ThreeOfAKind (highestKind ++
-                          concat kindsGroupedWithoutHighest)
+                        ThreeOfAKind (take 5 (highestKind ++
+                          concat kindsGroupedWithoutHighest))
                     | length highestKind == 2 &&
                       length sndHighestKind == 2 =
-                        TwoPair (
-           getTwoPairHand highestKind sndHighestKind kindsGroupedWithoutHighest)
+                        TwoPair (take 5 (
+          getTwoPairHand highestKind sndHighestKind kindsGroupedWithoutHighest))
                     | length highestKind == 2 =
-                        Pair (highestKind ++ concat kindsGroupedWithoutHighest)
-                    | otherwise = HighCard kindsSorted
+                        Pair (take 5 (highestKind ++ 
+                                          concat kindsGroupedWithoutHighest))
+                    | otherwise = HighCard (take 5 kindsSorted)
 
       where
         kindsSorted = sortByKind xs
@@ -306,7 +309,7 @@ module HoldEm where
           playerBet <- bet p (bets state)
           if playerBet == Nothing then do
             state <- return state {playersInRound =
-                                     delete (playerIndex p) (playersInRound state) }
+                                delete (playerIndex p) (playersInRound state) }
             doPlayerBets state ps
           else do
             let theBet = fromMaybe (playerIndex p, 0) playerBet
@@ -363,7 +366,7 @@ module HoldEm where
     randomPercentage = do randomRIO (0.0, 1.0)
 
     damper :: Float
-    damper = 0.85
+    damper = 0.6
 
     recordAllInBet :: GameState -> Bet -> GameState
     recordAllInBet state bet = state {allInBets =
