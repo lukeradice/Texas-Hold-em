@@ -275,19 +275,18 @@ module HoldEm where
           dealer = currentDealerIndex state
           playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
       state <- return state {bets = [(x, 0) | x <- [0..(length players -1)]]}
-      -- state <- return payBlinds state dealer
+      -- state <- return payBlinds state 
       doPlayerBets state playersInBetOrder
       return state
 
-    -- payBlinds :: GameState -> Int -> GameState 
-    -- payBlinds state ind | length players == 2 = 
-    --                     | state currenTDealerIndex /= blindIndex =
-    --                         payBlinds state <
-    --                     | otherwise = 
+    -- payBlinds :: GameState -> GameState 
+    -- payBlinds state = state {nonBustPlayers = } 
     --   where 
+    --     dealerIndex = currentDealerIndex state
     --     players = nonBustPlayers state
-    --     bBlind = bigBlind state
-    --     sBlind = smallBlind state
+    --     updatedSBlind = 
+    --     updatedBBlind = 
+        
 
     doPlayerBets :: GameState -> [Player] -> IO GameState
     doPlayerBets state [] = do
