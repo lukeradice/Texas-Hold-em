@@ -94,6 +94,7 @@ module HoldEm where
     dealToPlayersCommunity (p:ps) cs= p { hand = hand p ++ cs}
                                       : dealToPlayersCommunity ps cs
 
+
     type MyList = [Int]
 
     randomInt :: Int -> Int -> IO Int
@@ -151,7 +152,7 @@ module HoldEm where
                         TwoPair (take 5 (
           getTwoPairHand highestKind sndHighestKind kindsGroupedWithoutHighest))
                     | length highestKind == 2 =
-                        Pair (take 5 (highestKind ++ 
+                        Pair (take 5 (highestKind ++
                                           concat kindsGroupedWithoutHighest))
                     | otherwise = HighCard (take 5 kindsSorted)
 
@@ -247,6 +248,7 @@ module HoldEm where
                              allInBets = replicate (length players) 0 }
       putStrLn (concat (replicate 100 "*"))
       putStrLn "STARTING GAME"
+      putStrLn ""
       gameLoop state
 
     gameLoop :: GameState -> IO ()
@@ -257,6 +259,7 @@ module HoldEm where
     playRound :: GameState -> IO GameState
     playRound state = do
       putStrLn "STARTING NEW ROUND"
+      putStrLn ""
       state <- return state { nonBustPlayers =
                                 clearPlayerHands (nonBustPlayers state)}
       state <- shuffleDeck state
@@ -275,18 +278,47 @@ module HoldEm where
           dealer = currentDealerIndex state
           playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
       state <- return state {bets = [(x, 0) | x <- [0..(length players -1)]]}
-      -- state <- return payBlinds state 
+      state <- payBlinds state 
+      putStrLn ""
       doPlayerBets state playersInBetOrder
       return state
 
-    -- payBlinds :: GameState -> GameState 
-    -- payBlinds state = state {nonBustPlayers = } 
-    --   where 
-    --     dealerIndex = currentDealerIndex state
-    --     players = nonBustPlayers state
-    --     updatedSBlind = 
-    --     updatedBBlind = 
-        
+    payBlinds :: GameState -> IO GameState
+    payBlinds state = do
+      state <- payBlind state sBlind
+      payBlind state bBlind
+      where
+        bBlind = bigBlind state
+        sBlind = smallBlind state
+
+    payBlind :: GameState -> Int -> IO GameState
+    payBlind state blind = do
+      if chips updatedPlayer > 0 then do
+        putStr (name player)
+        putStr " HAS BET "
+        print blind
+        putStrLn ("ON THE" ++ blindStr ++ " BLIND")
+        let newState = state { nonBustPlayers = 
+                                      swap players updatedPlayer blindIndex }
+        return newState
+      else do --for all in blind      
+        newState <- recordAllInBet state (
+                                       blindIndex, chips updatedPlayer + blind)
+        putStrLn (" ON THE" ++ blindStr ++ " BLIND")
+        return newState { nonBustPlayers =
+          swap players (updatedPlayer {chips = 0}) blindIndex,
+          allInBets =
+            swap (allInBets state) (chips updatedPlayer + blind) blindIndex }
+      where
+        players = nonBustPlayers state
+        dealerIndex = currentDealerIndex state
+        blindIndex = if blind == smallBlind state then
+           dealerIndex + 1 `mod` length players
+        else
+          dealerIndex + 2 `mod` length players
+        blindStr = if blind == smallBlind state then " SMALL" else " BIG"
+        player = players !! blindIndex
+        updatedPlayer = player {chips = chips player - blind}
 
     doPlayerBets :: GameState -> [Player] -> IO GameState
     doPlayerBets state [] = do
@@ -318,8 +350,8 @@ module HoldEm where
               nonBustPlayers =
                 updatePlayersChips theBet outdatedNonBustPlayers,
                 bets = updatedBets }
-            state <- if snd theBet /= 0 && chips p == 0 then
-                       return (recordAllInBet state theBet)
+            state <- if snd theBet /= 0 && chips p == 0 then do
+                        recordAllInBet state theBet
                      else return state
             doPlayerBets state ps
 
@@ -345,9 +377,7 @@ module HoldEm where
 
     updatePlayersChips :: Bet -> [Player] -> [Player]
     updatePlayersChips bet outdatedNonBustPlayers =
-        take pIndex outdatedNonBustPlayers ++
-        [updatedPlayer] ++
-        drop (pIndex+1) outdatedNonBustPlayers
+      swap outdatedNonBustPlayers updatedPlayer pIndex
       where
         pIndex = fst bet
         player = outdatedNonBustPlayers!!fst bet
@@ -367,12 +397,20 @@ module HoldEm where
     damper :: Float
     damper = 0.6
 
-    recordAllInBet :: GameState -> Bet -> GameState
-    recordAllInBet state bet = state {allInBets =
-        take playerInd allInData ++ [snd bet] ++ drop (playerInd+1) allInData}
+    recordAllInBet :: GameState -> Bet -> IO GameState
+    recordAllInBet state bet = do
+      putStr pName
+      putStr " HAS GONE ALL IN WITH BET OF "
+      print (snd bet)
+      return state {
+        allInBets = swap allInData (snd bet) pIndex }
       where
-        playerInd = fst bet
+        pIndex = fst bet
         allInData = allInBets state
+        pName = name (nonBustPlayers state !! pIndex)
+
+    swap :: [a] -> a -> Int -> [a]
+    swap list item index = take index list ++ [item] ++ drop (index+1) list
 
     betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
     betRandom player ourCurrentBet betToCall = do
@@ -419,3 +457,4 @@ module HoldEm where
 
             let bet = Just (playerIndex player, betAmount)
             return bet
+
