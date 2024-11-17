@@ -213,12 +213,12 @@ module HoldEm where
     kickerCardCompare :: [Card] -> [Card] -> Ordering
     kickerCardCompare xs ys = compare (map fst xs) (map fst ys)
 
-    determineWinner :: GameState -> [(Player, PokerHand)]
+    determineWinner :: GameState -> [(PlayerIndex, PokerHand)]
     determineWinner state = winner : filter
               (\(_,a) -> kickerCardCompare (cards a) (cards (snd winner)) == EQ)
               (tail winnersRanked)
       where
-        hands = [(x, evaluateHand (hand x)) | x <- nonBustPlayers state]
+        hands = [(playerIndex x, evaluateHand (hand x)) | x <- nonBustPlayers state]
         winnersRanked = sortBy (\(_, a) (_, b)-> compare b a)  hands
         winner = head winnersRanked
 
@@ -264,10 +264,18 @@ module HoldEm where
                                 clearPlayerHands (nonBustPlayers state)}
       state <- shuffleDeck state
       state <- dealCards Hole state
-      bettingRound state
-      -- state <- dealCards Community state
-      -- state <- dealCards Community state
-      -- state <- dealCards Community state
+      state <- bettingRound state
+      state <- dealCards Community state
+      state <- bettingRound state
+      state <- dealCards Community state
+      state <- bettingRound state
+      state <- dealCards Community state
+      state <- bettingRound state
+      print state
+      putStrLn ""
+      payout state
+
+
 
     clearPlayerHands :: [Player] -> [Player]
     clearPlayerHands ps = [x { hand = [] } | x <- ps]
@@ -278,10 +286,9 @@ module HoldEm where
           dealer = currentDealerIndex state
           playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
       state <- return state {bets = [(x, 0) | x <- [0..(length players -1)]]}
-      state <- payBlinds state 
+      state <- payBlinds state
       putStrLn ""
       doPlayerBets state playersInBetOrder
-      return state
 
     payBlinds :: GameState -> IO GameState
     payBlinds state = do
@@ -298,17 +305,18 @@ module HoldEm where
         putStr " HAS BET "
         print blind
         putStrLn ("ON THE" ++ blindStr ++ " BLIND")
-        let newState = state { nonBustPlayers = 
-                                      swap players updatedPlayer blindIndex }
+        let newState = state { nonBustPlayers =
+            swap players updatedPlayer blindIndex,
+            currentPot = currentPot state + blind }
         return newState
       else do --for all in blind      
-        newState <- recordAllInBet state (
-                                       blindIndex, chips updatedPlayer + blind)
+        let betPaid = chips updatedPlayer + blind
+        newState <- recordAllInBet state (blindIndex, betPaid)
         putStrLn (" ON THE" ++ blindStr ++ " BLIND")
         return newState { nonBustPlayers =
           swap players (updatedPlayer {chips = 0}) blindIndex,
-          allInBets =
-            swap (allInBets state) (chips updatedPlayer + blind) blindIndex }
+          allInBets = swap (allInBets state) betPaid blindIndex,
+          currentPot = currentPot state + betPaid }
       where
         players = nonBustPlayers state
         dealerIndex = currentDealerIndex state
@@ -319,6 +327,77 @@ module HoldEm where
         blindStr = if blind == smallBlind state then " SMALL" else " BIG"
         player = players !! blindIndex
         updatedPlayer = player {chips = chips player - blind}
+
+    getAllInWinners :: [(PlayerIndex, PokerHand)] -> GameState ->
+                                                            [(PlayerIndex, Int)]
+    getAllInWinners ps state = sortBy (\(_, a) (_, b) -> compare a b)
+                                   [(p, allIns!!p)| (p, _) <- ps, allIns!!p > 0]
+      where allIns = allInBets state
+
+    payWinners :: GameState -> [Player] -> [(PlayerIndex, PokerHand)] -> Int
+                                                                 -> IO GameState
+    payWinners state ps [] potLeft = return state {currentPot = potLeft}
+    payWinners state ps (w:ws) potLeft = do
+      let allInWins = getAllInWinners ws state
+      if null allInWins then do
+        let player = players !! fst w
+            winning = currentPot state `div` length (w:ws)
+            updatedPlayer = player {chips = chips player + winning}
+        putStr (name player)
+        putStr " WINS "
+        putStr (show winning)
+        putStr " CHIPS WITH A HAND OF "
+        print (snd w)
+        state <- return state {nonBustPlayers =
+                                             swap players updatedPlayer (fst w)}
+        payWinners state ps ws (potLeft - winning)
+      else do
+        let allInBet = head allInWins
+            winning = snd allInBet*length ps `div` length (w:ws)
+            pIndex = fst allInBet
+            player = players !! pIndex
+            updatedPlayer = player {chips = chips player + winning}
+        putStr (name player)
+        putStr " WINS "
+        putStr (show winning)
+        putStr " CHIPS FROM SIDEPOT WITH A HAND OF "
+        let hand = head (filter (\(a,_) -> a == pIndex) (w:ws))
+        print (snd hand)
+        state <- return state {
+          nonBustPlayers = swap players updatedPlayer pIndex,
+          allInBets = map
+                        (\x -> if x >= snd allInBet then x-snd allInBet else x)
+                        (allInBets state)}
+
+        payWinners state ps (delete (pIndex, snd hand) (w:ws)) (potLeft - winning)
+      where
+        players = nonBustPlayers state
+
+
+
+
+
+    -- payWinners :: state -> [Player] -> [(PlayerIndex, PokerHand)] -> IO GameState
+    -- payWinners state ps ws pot = do
+    --   let allInsNonZero = filter(/=0) allIns
+    --       (pot, playersAfterSidePotWinnings) <- if not null allInsNonZero then 
+    --         paySidePots ws ps pot allIns
+    --       else 
+    --         (currentPot state, ps)
+
+    -- determine in the list of winners if there was an all bet before giving anyone any money
+      -- you then must pay to them only what they are owed 
+
+    payout :: GameState -> IO GameState
+    payout state = do
+       payWinners state players winners pot
+      -- return state {nonBustPlayers = payWinners players winners pot, bets=[], currentPot=remaining}
+      where
+        players = [nonBustPlayers state!!i | i <- playersInRound state]
+        winners = determineWinner state
+        -- allIns = allInBets state
+        pot = currentPot state
+        remaining = pot `mod` length winners
 
     doPlayerBets :: GameState -> [Player] -> IO GameState
     doPlayerBets state [] = do
