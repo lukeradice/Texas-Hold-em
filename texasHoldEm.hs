@@ -6,7 +6,7 @@ module HoldEm where
     import Data.List ( delete, groupBy, sortBy, minimumBy )
     import Data.Maybe (fromMaybe)
     import Control.Monad
-
+    
     data Suit = Hearts
               | Spades
               | Diamonds
@@ -218,7 +218,8 @@ module HoldEm where
               (\(_,a) -> kickerCardCompare (cards a) (cards (snd winner)) == EQ)
               (tail winnersRanked)
       where
-        hands = [(playerIndex x, evaluateHand (hand x)) | x <- nonBustPlayers state]
+        players = filter (\x -> playerIndex x `elem` playersInRound state) (nonBustPlayers state)
+        hands = [(playerIndex x, evaluateHand (hand x)) | x <- players]
         winnersRanked = sortBy (\(_, a) (_, b)-> compare b a)  hands
         winner = head winnersRanked
 
@@ -249,11 +250,12 @@ module HoldEm where
       putStrLn (concat (replicate 100 "*"))
       putStrLn "STARTING GAME"
       putStrLn ""
-      gameLoop state
+      gameLoop state 0
 
-    gameLoop :: GameState -> IO ()
-    gameLoop state = do
+    gameLoop :: GameState -> Int -> IO ()
+    gameLoop state count = do
       state <- playRound state
+      print state
       return ()
 
     playRound :: GameState -> IO GameState
@@ -261,34 +263,41 @@ module HoldEm where
       putStrLn "STARTING NEW ROUND"
       putStrLn ""
       state <- return state { nonBustPlayers =
-                                clearPlayerHands (nonBustPlayers state)}
+                                clearPlayerHands (nonBustPlayers state),
+                              playersInRound = [0..(length (nonBustPlayers state) -1)]}
       state <- shuffleDeck state
-      state <- dealCards Hole state
-      state <- bettingRound state
-      state <- dealCards Community state
-      state <- bettingRound state
-      state <- dealCards Community state
-      state <- bettingRound state
-      state <- dealCards Community state
-      state <- bettingRound state
-      print state
+      state <- payBlinds state
+      state <- initiateBets state Hole
+      state <- initiateBets state Community
+      state <- initiateBets state Community
+      state <- initiateBets state Community
       putStrLn ""
       payout state
 
-
+    initiateBets :: GameState -> Deal -> IO GameState
+    initiateBets state deal = do   
+      state <- dealCards deal state
+      state <- bettingRound state
+      putStr ""
+      putStr "CURRENT POT IS "
+      print (currentPot state)
+      return state
 
     clearPlayerHands :: [Player] -> [Player]
     clearPlayerHands ps = [x { hand = [] } | x <- ps]
 
     bettingRound :: GameState -> IO GameState
     bettingRound state = do
-      let players = nonBustPlayers state
-          dealer = currentDealerIndex state
-          playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
-      state <- return state {bets = [(x, 0) | x <- [0..(length players -1)]]}
-      state <- payBlinds state
-      putStrLn ""
-      doPlayerBets state playersInBetOrder
+      if length (playersInRound state) == 1 then
+        return state
+      else do
+        let players = nonBustPlayers state
+            dealer = currentDealerIndex state
+            playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
+            unfoldedPlayers = [p | p <- players, playerIndex p `elem` playersInRound state]
+        state <- return state {bets = [(x, 0) | x <- [0..(length players -1)]]}
+        putStrLn ""
+        doPlayerBets state unfoldedPlayers
 
     payBlinds :: GameState -> IO GameState
     payBlinds state = do
@@ -346,8 +355,11 @@ module HoldEm where
         putStr (name player)
         putStr " WINS "
         putStr (show winning)
-        putStr " CHIPS WITH A HAND OF "
-        print (snd w)
+        if length ps > 1 then do
+          putStr " CHIPS WITH A HAND OF "
+          print (snd w)
+        else do
+          putStrLn " CHIPS AS ALL OTHER PLAYERS FOLDED"
         state <- return state {nonBustPlayers =
                                              swap players updatedPlayer (fst w)}
         payWinners state ps ws (potLeft - winning)
@@ -373,29 +385,12 @@ module HoldEm where
       where
         players = nonBustPlayers state
 
-
-
-
-
-    -- payWinners :: state -> [Player] -> [(PlayerIndex, PokerHand)] -> IO GameState
-    -- payWinners state ps ws pot = do
-    --   let allInsNonZero = filter(/=0) allIns
-    --       (pot, playersAfterSidePotWinnings) <- if not null allInsNonZero then 
-    --         paySidePots ws ps pot allIns
-    --       else 
-    --         (currentPot state, ps)
-
-    -- determine in the list of winners if there was an all bet before giving anyone any money
-      -- you then must pay to them only what they are owed 
-
     payout :: GameState -> IO GameState
     payout state = do
        payWinners state players winners pot
-      -- return state {nonBustPlayers = payWinners players winners pot, bets=[], currentPot=remaining}
       where
         players = [nonBustPlayers state!!i | i <- playersInRound state]
         winners = determineWinner state
-        -- allIns = allInBets state
         pot = currentPot state
         remaining = pot `mod` length winners
 
@@ -411,28 +406,32 @@ module HoldEm where
                                       snd b < snd highestBet]
 
       if null playersWhoNeedToCall then do
-        return state {playersInRound = [0..length (nonBustPlayers state) -1]}
+        return state
       else
         doPlayerBets state playersWhoNeedToCall
 
     doPlayerBets state (p:ps) = do
-          playerBet <- bet p (bets state)
-          if playerBet == Nothing then do
-            state <- return state {playersInRound =
-                                delete (playerIndex p) (playersInRound state) }
-            doPlayerBets state ps
-          else do
-            let theBet = fromMaybe (playerIndex p, 0) playerBet
-                updatedBets = updateBetValue (bets state) theBet
-                outdatedNonBustPlayers = nonBustPlayers state
-            state <- return state {
-              nonBustPlayers =
-                updatePlayersChips theBet outdatedNonBustPlayers,
-                bets = updatedBets }
-            state <- if snd theBet /= 0 && chips p == 0 then do
-                        recordAllInBet state theBet
-                     else return state
-            doPlayerBets state ps
+      if length (playersInRound state) /= 1 then do
+        playerBet <- bet p (bets state)
+        if playerBet == Nothing then do
+          state <- return state {playersInRound =
+                              delete (playerIndex p) (playersInRound state) }
+          doPlayerBets state ps
+        else do
+          let theBet = fromMaybe (playerIndex p, 0) playerBet
+              updatedBets = updateBetValue (bets state) theBet
+              outdatedNonBustPlayers = nonBustPlayers state
+          state <- return state {
+            nonBustPlayers =
+              updatePlayersChips theBet outdatedNonBustPlayers,
+              bets = updatedBets,
+              currentPot = currentPot state + snd theBet }
+          state <- if snd theBet /= 0 && chips p == 0 then do
+                      recordAllInBet state theBet
+                    else return state
+          doPlayerBets state ps
+      else
+        return state
 
     bet :: Player -> [Bet] -> IO (Maybe Bet)
     bet p bs | strategy p == RandomPlayer = do
@@ -536,4 +535,3 @@ module HoldEm where
 
             let bet = Just (playerIndex player, betAmount)
             return bet
-
