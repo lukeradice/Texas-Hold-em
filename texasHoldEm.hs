@@ -265,7 +265,7 @@ module HoldEm where
         putStr $ show count
         putStrLn " ROUNDS"
       else
-        if count == 100 then do
+        if count == 5 then do
           putStrLn (concat (replicate 100 "*"))
           putStrLn ""
           let maxChip = maximum [chips p | p <- players]
@@ -277,8 +277,9 @@ module HoldEm where
           putStrLn $ unwords standings
           putStr "WINNER: "
 
-        else
-          gameLoop state (count+1)
+        else do
+          let newDealer = (currentDealerIndex state + 1) `mod` length players
+          gameLoop state {currentDealerIndex = newDealer} (count+1)
 
     playRound :: GameState -> IO GameState
     playRound state = do
@@ -380,9 +381,9 @@ module HoldEm where
         players = nonBustPlayers state
         dealerIndex = currentDealerIndex state
         blindIndex = if blind == smallBlind state then
-           dealerIndex + 1 `mod` length players
+           (dealerIndex + 1) `mod` length players
         else
-          dealerIndex + 2 `mod` length players
+          (dealerIndex + 2) `mod` length players
         blindStr = if blind == smallBlind state then " SMALL" else " BIG"
         player = players !! blindIndex
         updatedPlayer = player {chips = chips player - blind}
