@@ -259,13 +259,10 @@ module HoldEm where
       if length players == 1 then do
         putStrLn $ concat (replicate 100 "*")
         putStrLn ""
-        putStr $ name (head players)
-        putStrLn " HAS WON ALL THE CHIPS !!!"
-        putStr "IT TOOK HIM "
-        putStr $ show count
-        putStrLn " ROUNDS"
+        putStr $ name (head players) ++ " HAS WON ALL THE CHIPS !!!"
+        putStrLn $ "IT TOOK HIM " ++ show count ++ " ROUNDS"
       else
-        if count == 5 then do
+        if count == 2 then do
           putStrLn (concat (replicate 100 "*"))
           putStrLn ""
           let maxChip = maximum [chips p | p <- players]
@@ -275,17 +272,16 @@ module HoldEm where
                           p <- sortedByChips]
           putStrLn "FINAL STANDINGS: "
           putStrLn $ unwords standings
-          putStr "WINNER: "
-
+          putStrLn $ "WINNER(S): " ++ show winners
         else do
           let newDealer = (currentDealerIndex state + 1) `mod` length players
+          putStrLn $ "new dealer assigned? " ++ show newDealer
           gameLoop state {currentDealerIndex = newDealer} (count+1)
 
     playRound :: GameState -> IO GameState
     playRound state = do
       putStrLn "STARTING NEW ROUND"
       putStrLn ""
-      print state
       state <- return state { deck = generateDeck,
                               nonBustPlayers =
                        clearPlayerHands (nonBustPlayers state),
@@ -307,8 +303,7 @@ module HoldEm where
     removeBustPlayers state (i:is) = do
       if i /= length (nonBustPlayers state) && chips (nonBustPlayers state !! i) == 0 then do
         let player = nonBustPlayers state !! i
-        putStr (name player)
-        putStrLn " HAS GONE BUST! BETTER LUCK NEXT TIME, BUDDY"
+        putStrLn $ name player ++ " HAS GONE BUST! BETTER LUCK NEXT TIME, BUDDY"
         let players = delete player (nonBustPlayers state)
         let pIndex = playerIndex player
         state <- return state { nonBustPlayers = map
@@ -325,12 +320,13 @@ module HoldEm where
       let playersIn = length (playersInRound state)
       if playersIn > 1 then do
         state <- dealCards deal state
-        when (length allIns < playersIn - 1) $ do
+        if length allIns < playersIn - 1 then do
           state <- bettingRound state
-          putStr ""
-          putStr "CURRENT POT IS "
-          print (currentPot state)
-        return state
+          putStrLn ""
+          putStr $ "CURRENT POT IS " ++ show (currentPot state)
+          return state
+        else
+          return state
       else
         return state
 
@@ -345,7 +341,7 @@ module HoldEm where
         let players = nonBustPlayers state
             dealer = currentDealerIndex state
             playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
-            unfoldedPlayers = [p | p <- players, playerIndex p `elem` playersInRound state]
+            unfoldedPlayers = [p | p <- playersInBetOrder, playerIndex p `elem` playersInRound state]
         state <- return state {bets = [(x, 0) | x <- [0..(length players -1)]]}
         putStrLn ""
         doPlayerBets state unfoldedPlayers
@@ -361,10 +357,8 @@ module HoldEm where
     payBlind :: GameState -> Int -> IO GameState
     payBlind state blind = do
       if chips updatedPlayer > 0 then do
-        putStr (name player)
-        putStr " HAS BET "
-        print blind
-        putStrLn ("ON THE" ++ blindStr ++ " BLIND")
+        putStr $ name player ++ " HAS BET " ++ show blind
+        putStrLn $ " ON THE" ++ blindStr ++ " BLIND"
         let newState = state { nonBustPlayers =
             swap players updatedPlayer blindIndex,
             currentPot = currentPot state + blind }
@@ -372,11 +366,12 @@ module HoldEm where
       else do --for all in blind      
         let betPaid = chips updatedPlayer + blind
         newState <- recordAllInBet state (blindIndex, betPaid)
-        putStrLn (" ON THE" ++ blindStr ++ " BLIND")
+        putStrLn $ " ON THE" ++ blindStr ++ " BLIND"
         return newState { nonBustPlayers =
           swap players (updatedPlayer {chips = 0}) blindIndex,
           allInBets = swap (allInBets state) betPaid blindIndex,
           currentPot = currentPot state + betPaid }
+
       where
         players = nonBustPlayers state
         dealerIndex = currentDealerIndex state
@@ -403,12 +398,9 @@ module HoldEm where
         let player = players !! fst w
             winning = currentPot state `div` length (w:ws)
             updatedPlayer = player {chips = chips player + winning}
-        putStr (name player)
-        putStr " WINS "
-        putStr (show winning)
+        putStr $ name player ++ " WINS " ++ show winning
         if length ps > 1 then do
-          putStr " CHIPS WITH A HAND OF "
-          print (snd w)
+          putStrLn $ " CHIPS WITH A HAND OF " ++ show (snd w)
         else do
           putStrLn " CHIPS AS ALL OTHER PLAYERS FOLDED"
         state <- return state {nonBustPlayers =
@@ -420,12 +412,9 @@ module HoldEm where
             pIndex = fst allInBet
             player = players !! pIndex
             updatedPlayer = player {chips = chips player + winning}
-        putStr (name player)
-        putStr " WINS "
-        putStr (show winning)
-        putStr " CHIPS FROM SIDEPOT WITH A HAND OF "
         let hand = head (filter (\(a,_) -> a == pIndex) (w:ws))
-        print (snd hand)
+        putStr $ name player ++ " WINS " ++ show winning
+        putStr $ " CHIPS FROM SIDEPOT WITH A HAND OF " ++ show (snd hand)
         state <- return state {
           nonBustPlayers = swap players updatedPlayer pIndex,
           allInBets = map
@@ -456,7 +445,6 @@ module HoldEm where
                                             b <- bets state,
                                             fst b `elem` playersInRound state &&
                                               snd b < snd highestBet]
-      -- print "no"
       if null playersWhoNeedToCall then do
         return state
       else
@@ -464,7 +452,6 @@ module HoldEm where
 
     doPlayerBets state (p:ps) = do
       if length (playersInRound state) /= 1 then do
-        -- print(allInBets state)
         if not (skipBecauseOfAllIn state p) then do
           playerBet <- bet p (bets state)
           if playerBet == Nothing then do
@@ -506,8 +493,7 @@ module HoldEm where
     bet p bs | strategy p == RandomPlayer = do
                   bet <- betRandom p ourCurrentBet betToCall
                   when (bet == Nothing) $ do
-                          putStr (name p)
-                          putStrLn " HAS FOLDED"
+                          putStr $ name p ++ " HAS FOLDED"
                   return bet
              | otherwise = return Nothing
       where
@@ -546,9 +532,7 @@ module HoldEm where
 
     recordAllInBet :: GameState -> Bet -> IO GameState
     recordAllInBet state bet = do
-      putStr pName
-      putStr " HAS GONE ALL IN WITH BET OF "
-      print (snd bet)
+      putStr $ pName ++ " HAS GONE ALL IN WITH BET OF " ++ show (snd bet)
       return state {
         allInBets = swap allInData (snd bet) pIndex }
       where
@@ -559,48 +543,53 @@ module HoldEm where
     swap :: [a] -> a -> Int -> [a]
     swap list item index = take index list ++ [item] ++ drop (index+1) list
 
+    raise :: Player -> Int -> IO Bet
+    raise pl call = do 
+      amountRaisedPercentage <- randomPercentage
+      let raise = ceiling (fromIntegral
+                (chips pl - call)*amountRaisedPercentage*damper)
+          totalAmountBet = call + raise
+
+      putStr $ name pl ++ " HAS BET " ++ show totalAmountBet
+      when (call /= 0) $ do
+        putStrLn $ " TO RAISE BY " ++ show raise
+      return (playerIndex pl, totalAmountBet)
+
+    callOrCheck :: Player -> Int -> Int -> IO Bet
+    callOrCheck pl betAmount callToMake = do
+      putStr $ name pl
+      if betAmount == 0 then do
+        putStrLn " HAS CHECKED"
+      else do
+        putStr $ " HAS BET " ++ show betAmount
+        when (callToMake /= 0) $ do
+          putStrLn " TO CALL"
+      return (playerIndex pl, betAmount)
+
     betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
     betRandom player ourCurrentBet betToCall = do
       putStrLn ""
-      putStr "bet to call is"
-      print betToCall
+      putStrLn $ "bet to call is " ++ show betToCall
+      
       foldChance <- randomInt 1 100
-      if foldChance < 15 then return Nothing
+      if foldChance < 10 then return Nothing
       else do
 
         let chipsLeft = chips player
             callToMake = betToCall - ourCurrentBet
-        if callToMake > chipsLeft then return Nothing
+            betAmount = callToMake
+
+        raiseChance <- randomInt 1 100
+        if chipsLeft > callToMake && raiseChance > 40 then do
+          bet <- raise player callToMake
+          return $ Just bet
         else do
-
-          let betAmount = callToMake
-          callOrRaiseChance <- randomInt 1 100
-
-          if chipsLeft /= callToMake && callOrRaiseChance > 50 then do
-
-            amountRaisedPercentage <- randomPercentage
-            let raise = ceiling (fromIntegral
-                      (chips player - callToMake)*amountRaisedPercentage*damper)
-                totalAmountBet = betAmount + raise
-
-            putStr (name player)
-            putStr " HAS BET "
-            print totalAmountBet
-            when (callToMake /= 0) $ do
-              putStr "TO RAISE BY "
-              print raise
-            let bet = Just (playerIndex player, totalAmountBet)
-            return bet
+          if chipsLeft <= callToMake then do
+            allInChance <- randomInt 1 100
+            if allInChance > 70 then 
+              return $ Just (playerIndex player, chipsLeft)
+            else return Nothing
           else do
-
-            putStr (name player)
-            if betAmount == 0 then do
-              putStrLn " HAS CHECKED"
-            else do
-              putStr " HAS BET "
-              print betAmount
-              when (callToMake /= 0) $ do
-                putStrLn " TO CALL"
-
-            let bet = Just (playerIndex player, betAmount)
-            return bet
+            bet <- callOrCheck player betAmount callToMake
+            return $ Just bet
+              
