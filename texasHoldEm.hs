@@ -6,6 +6,7 @@ module HoldEm where
     import Data.List ( delete, groupBy, sortBy, minimumBy )
     import Data.Maybe (fromMaybe)
     import Control.Monad
+    import Data.Char (isSpace, toLower, isDigit)
 
     data Suit = Hearts
               | Spades
@@ -36,8 +37,11 @@ module HoldEm where
     type Deck = [Card]
 
     data Strategy = RandomPlayer
+                  | PassivePlayer
                   | AggressivePlayer
-                  | SmartPlayer deriving(Show, Eq)
+                  | SmartPlayer 
+                  | HumanPlayer deriving(Show, Eq)
+
 
     data Player = Player { name :: String,
                            hand :: [Card],
@@ -61,6 +65,9 @@ module HoldEm where
                                  allInBets :: [Int] } deriving(Show)
 
     data Deal = Community | Hole  deriving(Eq)
+
+    data BetChances = BetChances {
+      raiseTh :: Int, foldTh :: Int, allInCallTh :: Int}
 
     dealCards :: Deal -> GameState -> IO GameState
     dealCards deal state = do
@@ -233,9 +240,9 @@ module HoldEm where
       let player1 = Player {name="wii matt", hand=[], chips=100,
                             strategy=RandomPlayer, playerIndex=0}
           player2 = Player {name="gwilym", hand=[], chips=100,
-                            strategy=RandomPlayer, playerIndex=1}
+                            strategy=AggressivePlayer, playerIndex=1}
           player3 = Player {name="miguel", hand=[], chips=100,
-                            strategy=RandomPlayer, playerIndex=2}
+                            strategy=HumanPlayer, playerIndex=2}
           players = [player1, player2, player3]
           state = GameState {nonBustPlayers=players,
                              playersInRound=[0..length players -1],
@@ -270,12 +277,11 @@ module HoldEm where
               sortedByChips = sortBy (\p1 p2 -> compare (chips p2) (chips p1)) players
               standings = [name p ++ " WITH " ++ show (chips p) ++ " CHIPS | " |
                           p <- sortedByChips]
-          putStrLn "FINAL STANDINGS: "
+          putStrLn $ "FINAL STANDINGS AFTER " ++ show count ++ " ROUNDS:"
           putStrLn $ unwords standings
           putStrLn $ "WINNER(S): " ++ show winners
         else do
           let newDealer = (currentDealerIndex state + 1) `mod` length players
-          putStrLn $ "new dealer assigned? " ++ show newDealer
           gameLoop state {currentDealerIndex = newDealer} (count+1)
 
     playRound :: GameState -> IO GameState
@@ -491,10 +497,13 @@ module HoldEm where
 
     bet :: Player -> [Bet] -> IO (Maybe Bet)
     bet p bs | strategy p == RandomPlayer = do
-                  bet <- betRandom p ourCurrentBet betToCall
-                  when (bet == Nothing) $ do
-                          putStr $ name p ++ " HAS FOLDED"
-                  return bet
+                betRandom p ourCurrentBet betToCall
+             | strategy p == PassivePlayer = do
+                betPassive p ourCurrentBet betToCall
+             | strategy p == AggressivePlayer = do
+                betAggressive p ourCurrentBet betToCall
+             | strategy p == HumanPlayer = do
+                humanBet p ourCurrentBet betToCall
              | otherwise = return Nothing
       where
         betToCall = snd (getBetToCall bs)
@@ -544,52 +553,121 @@ module HoldEm where
     swap list item index = take index list ++ [item] ++ drop (index+1) list
 
     raise :: Player -> Int -> IO Bet
-    raise pl call = do 
+    raise pl call = do
       amountRaisedPercentage <- randomPercentage
       let raise = ceiling (fromIntegral
                 (chips pl - call)*amountRaisedPercentage*damper)
           totalAmountBet = call + raise
 
-      putStr $ name pl ++ " HAS BET " ++ show totalAmountBet
+      putStrLn $ name pl ++ " HAS BET " ++ show totalAmountBet
       when (call /= 0) $ do
         putStrLn $ " TO RAISE BY " ++ show raise
       return (playerIndex pl, totalAmountBet)
 
-    callOrCheck :: Player -> Int -> Int -> IO Bet
-    callOrCheck pl betAmount callToMake = do
+    callOrCheck :: Player -> Int -> IO Bet
+    callOrCheck pl callToMake = do
       putStr $ name pl
-      if betAmount == 0 then do
+      if callToMake == 0 then do
         putStrLn " HAS CHECKED"
       else do
-        putStr $ " HAS BET " ++ show betAmount
-        when (callToMake /= 0) $ do
-          putStrLn " TO CALL"
-      return (playerIndex pl, betAmount)
+        putStr $ " HAS BET " ++ show callToMake
+        putStrLn " TO CALL"
+      return (playerIndex pl, callToMake)
+
+    fold :: Player -> IO (Maybe Bet)
+    fold p = do
+      putStr $ name p ++ " HAS FOLDED"
+      return Nothing
 
     betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
-    betRandom player ourCurrentBet betToCall = do
+    betRandom pl currBet betToCall = do
+      let randomBetChances = BetChances{
+        foldTh = 90, raiseTh = 60, allInCallTh = 70}
+      randomBetter pl currBet betToCall randomBetChances
+
+    betPassive :: Player -> Int -> Int -> IO (Maybe Bet)
+    betPassive pl currBet betToCall = do
+      let randomBetChances = BetChances{
+        foldTh = 90, raiseTh = 100, allInCallTh = 85}
+      randomBetter pl currBet betToCall randomBetChances
+
+    betAggressive :: Player -> Int -> Int -> IO (Maybe Bet)
+    betAggressive pl currBet betToCall = do
+      let randomBetChances = BetChances{
+        foldTh = 99, raiseTh = 20, allInCallTh = 30}
+      randomBetter pl currBet betToCall randomBetChances
+
+    randomBetter :: Player -> Int -> Int -> BetChances -> IO (Maybe Bet)
+    randomBetter pl currBet betToCall betChances = do
       putStrLn ""
       putStrLn $ "bet to call is " ++ show betToCall
-      
+
       foldChance <- randomInt 1 100
-      if foldChance < 10 then return Nothing
+      if foldChance > foldTh betChances then fold pl
       else do
 
-        let chipsLeft = chips player
-            callToMake = betToCall - ourCurrentBet
-            betAmount = callToMake
+        let chipsLeft = chips pl
+            callToMake = betToCall - currBet
 
         raiseChance <- randomInt 1 100
-        if chipsLeft > callToMake && raiseChance > 40 then do
-          bet <- raise player callToMake
+        if chipsLeft > callToMake && raiseChance > raiseTh betChances then do
+          bet <- raise pl callToMake
           return $ Just bet
         else do
           if chipsLeft <= callToMake then do
             allInChance <- randomInt 1 100
-            if allInChance > 70 then 
-              return $ Just (playerIndex player, chipsLeft)
-            else return Nothing
+            if allInChance > allInCallTh betChances then
+              return $ Just (playerIndex pl, chipsLeft)
+            else fold pl
           else do
-            bet <- callOrCheck player betAmount callToMake
+            bet <- callOrCheck pl callToMake
             return $ Just bet
-              
+
+    checkRaise :: Player -> String -> IO Bool
+    checkRaise pl str | length str <= 5 = do
+                          putStrLn "INPUT INVALID, TRY AGAINKL"
+                          return False
+                      | length [c | (c, i) <- zip (take 5 str) [0..], c == "raise"!!i] == 5
+                       = if foldr ((&&) . isDigit) True (drop 5 str) then 
+                          if chips pl > read (drop 5 str) then 
+                            return True
+                          else do
+                            putStrLn "YOU DON'T HAVE ENOUGH CHIPS TO BET THAT"
+                            return False
+                        else do
+                          putStrLn "INPUT INVALID, TRY AGAIN"
+                          return False
+
+    getAction :: Player -> Int -> Int -> IO (Maybe Bet)
+    getAction pl currBet betToCall = do
+      putStrLn ""
+      putStrLn $ name pl ++ ", WHAT WOULD YOU LIKE TO DO? (raise x, fold, call)"
+      rawStr <- getLine
+      let inp = map toLower (filter (not . isSpace) rawStr)
+      putStrLn ""
+      case inp of
+        "fold" -> do
+          putStrLn $ name pl ++ ", YOU FOLDED"
+          return Nothing
+        "call" -> do
+          if betToCall == 0 then do 
+            putStrLn $ name pl ++ ", YOU CHECKED"
+          else do putStrLn $ name pl ++ ", YOU CALLED"
+          return (Just (playerIndex pl, betToCall))
+        _ -> do 
+          raiseValid <- checkRaise pl inp
+          if raiseValid then do
+                let bet = (playerIndex pl, read (drop 5 inp))
+                putStrLn $ name pl ++ ", YOU RAISED " ++ show (snd bet) 
+                return $ Just bet
+             else getAction pl currBet betToCall
+
+    humanBet :: Player -> Int -> Int -> IO (Maybe Bet)
+    humanBet pl currBet betToCall = do
+      putStrLn ""
+      putStrLn $ "YOUR CHIPS: " ++ show (chips pl)
+      putStrLn $ "YOUR CURRENT BET: " ++ show currBet
+      putStrLn $ "YOUR HAND: " ++ show (hand pl)
+      getAction pl currBet betToCall
+      
+
