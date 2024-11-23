@@ -39,7 +39,7 @@ module HoldEm where
     data Strategy = RandomPlayer
                   | PassivePlayer
                   | AggressivePlayer
-                  | SmartPlayer 
+                  | SmartPlayer
                   | HumanPlayer deriving(Show, Eq)
 
 
@@ -255,8 +255,7 @@ module HoldEm where
                              bigBlind=20,
                              allInBets = replicate (length players) 0 }
       putStrLn $ concat (replicate 100 "*")
-      putStrLn "STARTING GAME"
-      putStrLn ""
+      putStrLn "STARTING GAME\n"
       gameLoop state 0
 
     gameLoop :: GameState -> Int -> IO ()
@@ -264,14 +263,12 @@ module HoldEm where
       state <- playRound state
       let players = nonBustPlayers state
       if length players == 1 then do
-        putStrLn $ concat (replicate 100 "*")
-        putStrLn ""
+        putStrLn $ concat (replicate 100 "*") ++ "\n"
         putStr $ name (head players) ++ " HAS WON ALL THE CHIPS !!!"
         putStrLn $ "IT TOOK HIM " ++ show count ++ " ROUNDS"
       else
         if count == 2 then do
-          putStrLn (concat (replicate 100 "*"))
-          putStrLn ""
+          putStrLn $ concat (replicate 100 "*") ++ "\n"
           let maxChip = maximum [chips p | p <- players]
               winners = [name p | p <- players, chips p == maxChip]
               sortedByChips = sortBy (\p1 p2 -> compare (chips p2) (chips p1)) players
@@ -286,8 +283,7 @@ module HoldEm where
 
     playRound :: GameState -> IO GameState
     playRound state = do
-      putStrLn "STARTING NEW ROUND"
-      putStrLn ""
+      putStrLn "STARTING NEW ROUND\n"
       state <- return state { deck = generateDeck,
                               nonBustPlayers =
                        clearPlayerHands (nonBustPlayers state),
@@ -344,10 +340,15 @@ module HoldEm where
       if length (playersInRound state) == 1 then
         return state
       else do
-        let players = nonBustPlayers state
+        let comCards = communityCards state
+            players = nonBustPlayers state
             dealer = currentDealerIndex state
             playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
             unfoldedPlayers = [p | p <- playersInBetOrder, playerIndex p `elem` playersInRound state]
+        if null comCards then do
+          putStrLn "\nPRE-FLOP BETTING ROUND"
+        else do
+          putStrLn $ "COMMUNITY CARDS ARE NOW : " ++ show comCards
         state <- return state {bets = [(x, 0) | x <- [0..(length players -1)]]}
         putStrLn ""
         doPlayerBets state unfoldedPlayers
@@ -459,7 +460,7 @@ module HoldEm where
     doPlayerBets state (p:ps) = do
       if length (playersInRound state) /= 1 then do
         if not (skipBecauseOfAllIn state p) then do
-          playerBet <- bet p (bets state)
+          playerBet <- bet p state (bets state)
           if playerBet == Nothing then do
             state <- return state {playersInRound =
                                 delete (playerIndex p) (playersInRound state) }
@@ -487,24 +488,24 @@ module HoldEm where
 
     skipBecauseOfAllIn :: GameState -> Player -> Bool
     skipBecauseOfAllIn state p | allIns!!playerIndex p > 0 = True
-                                | amount == length playersIn - 1  = True
-                                | otherwise = False
+                               | amount == length playersIn - 1  = True
+                               | otherwise = False
       where
         allIns = allInBets state
         playersIn = playersInRound state
         amount = length (filter (/=0) allIns)
 
 
-    bet :: Player -> [Bet] -> IO (Maybe Bet)
-    bet p bs | strategy p == RandomPlayer = do
-                betRandom p ourCurrentBet betToCall
-             | strategy p == PassivePlayer = do
-                betPassive p ourCurrentBet betToCall
-             | strategy p == AggressivePlayer = do
-                betAggressive p ourCurrentBet betToCall
-             | strategy p == HumanPlayer = do
-                humanBet p ourCurrentBet betToCall
-             | otherwise = return Nothing
+    bet :: Player -> GameState -> [Bet] -> IO (Maybe Bet)
+    bet p state bs | strategy p == RandomPlayer = do
+                      betRandom p ourCurrentBet betToCall
+                   | strategy p == PassivePlayer = do
+                      betPassive p ourCurrentBet betToCall
+                   | strategy p == AggressivePlayer = do
+                      betAggressive p ourCurrentBet betToCall
+                   | strategy p == HumanPlayer = do
+                      humanBet p state ourCurrentBet betToCall
+                   | otherwise = return Nothing
       where
         betToCall = snd (getBetToCall bs)
         ourCurrentBet = snd (head (filter (\(a, _) -> a == playerIndex p) bs))
@@ -623,51 +624,59 @@ module HoldEm where
             bet <- callOrCheck pl callToMake
             return $ Just bet
 
-    checkRaise :: Player -> String -> IO Bool
-    checkRaise pl str | length str <= 5 = do
-                          putStrLn "INPUT INVALID, TRY AGAINKL"
-                          return False
-                      | length [c | (c, i) <- zip (take 5 str) [0..], c == "raise"!!i] == 5
-                       = if foldr ((&&) . isDigit) True (drop 5 str) then 
-                          if chips pl > read (drop 5 str) then 
-                            return True
-                          else do
-                            putStrLn "YOU DON'T HAVE ENOUGH CHIPS TO BET THAT"
-                            return False
-                        else do
-                          putStrLn "INPUT INVALID, TRY AGAIN"
-                          return False
+    inpError :: String -> IO Bool
+    inpError err = do
+      putStrLn $ err ++ ", TRY AGAIN"
+      return False
+
+    checkRaise :: Player -> String -> Int -> IO Bool
+    checkRaise pl str call
+        | length str <= 5 = inpError "INVALID INPUT"
+        | length [c | (c, i) <- zip (take 5 str) [0..], c == "raise"!!i] == 5
+            = if foldr ((&&) . isDigit) True (drop 5 str) then
+                if parsedInt <= 0 then do inpError "CAN'T RAISE BY ZERO OR LESS"
+                else do
+                  if chips pl > call + parsedInt then
+                    return True
+                  else do inpError "YOU DON'T HAVE ENOUGH CHIPS TO BET THAT"
+              else inpError "INVALID INPUT"
+        | otherwise = inpError "INVALID INPUT"
+      where parsedInt = read (drop 5 str)
 
     getAction :: Player -> Int -> Int -> IO (Maybe Bet)
     getAction pl currBet betToCall = do
-      putStrLn ""
-      putStrLn $ name pl ++ ", WHAT WOULD YOU LIKE TO DO? (raise x, fold, call)"
+      putStrLn $ "\n" ++ name pl ++ ", CHOOSE ACTION: raise x, fold, call"
       rawStr <- getLine
       let inp = map toLower (filter (not . isSpace) rawStr)
-      putStrLn ""
       case inp of
         "fold" -> do
-          putStrLn $ name pl ++ ", YOU FOLDED"
+          putStrLn $ "\n" ++ name pl ++ ", YOU FOLDED"
           return Nothing
         "call" -> do
-          if betToCall == 0 then do 
-            putStrLn $ name pl ++ ", YOU CHECKED"
-          else do putStrLn $ name pl ++ ", YOU CALLED"
-          return (Just (playerIndex pl, betToCall))
-        _ -> do 
-          raiseValid <- checkRaise pl inp
+          let callAmount = min (chips pl) betToCall
+          if betToCall == 0 then do
+            putStrLn $ "\n" ++ name pl ++ ", YOU CHECKED"
+          else do
+            putStrLn $ "\n" ++ name pl ++ ", YOU BET " ++ 
+              show callAmount ++ " TO CALL"
+          return (Just (playerIndex pl, callAmount))
+        _ -> do
+          raiseValid <- checkRaise pl inp betToCall
           if raiseValid then do
-                let bet = (playerIndex pl, read (drop 5 inp))
-                putStrLn $ name pl ++ ", YOU RAISED " ++ show (snd bet) 
-                return $ Just bet
-             else getAction pl currBet betToCall
+            let raiseAmount = read (drop 5 inp)
+            let betAmount = betToCall + raiseAmount
+            let bet = (playerIndex pl, betAmount)
+            putStrLn $ "\n" ++ name pl ++ ", YOU BET " ++ show betAmount ++ 
+              " CHIPS" ++ " TO RAISE BY " ++ show raiseAmount
+            return $ Just bet
+          else getAction pl currBet betToCall
 
-    humanBet :: Player -> Int -> Int -> IO (Maybe Bet)
-    humanBet pl currBet betToCall = do
-      putStrLn ""
+    humanBet :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
+    humanBet pl state currBet betToCall = do
       putStrLn $ "YOUR CHIPS: " ++ show (chips pl)
       putStrLn $ "YOUR CURRENT BET: " ++ show currBet
       putStrLn $ "YOUR HAND: " ++ show (hand pl)
+      putStrLn $ "COMMUNITY CARDS: " ++ show (communityCards state)
       getAction pl currBet betToCall
-      
+
 
