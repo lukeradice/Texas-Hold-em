@@ -136,34 +136,26 @@ module HoldEm where
                    | RoyalFlush {cards :: [Card]} deriving(Show, Eq, Ord)
 
     evaluateHand :: [Card] -> PokerHand
-    evaluateHand xs | length xs == 2 = evaluateHoleHand xs
-                    | length longestStraight >= 5 &&
-                      longestStraight == highestFlush =
-                        getTypeOfStraightFlush xs longestStraight
-                    | length highestKind == 4 =
-                        FourOfAKind (take 5 (highestKind ++
-                          concat kindsGroupedWithoutHighest))
-                    | length highestKind == 3 &&
-                      length sndHighestKind >= 2 =
-                        FullHouse (take 5 (highestKind ++
-                          drop (length sndHighestKind - 2) sndHighestKind))
-                    | length highestFlush >= 5 =
-                        Flush (take 5
-                            (drop (length highestFlush - 5) highestFlush))
-                    | length longestStraight >= 5 =
-                        Straight (take 5 (
-                            drop (length longestStraight - 5) longestStraight))
-                    | length highestKind == 3 =
-                        ThreeOfAKind (take 5 (highestKind ++
-                          concat kindsGroupedWithoutHighest))
-                    | length highestKind == 2 &&
-                      length sndHighestKind == 2 =
-                        TwoPair (take 5 (
-          getTwoPairHand highestKind sndHighestKind kindsGroupedWithoutHighest))
-                    | length highestKind == 2 =
-                        Pair (take 5 (highestKind ++
-                                   reverse (concat kindsGroupedWithoutHighest)))
-                    | otherwise = HighCard (take 5 kindsSorted)
+    evaluateHand xs 
+      | length xs == 2 = evaluateHoleHand xs
+      | length longestStraight >= 5 && 
+        longestStraight == highestFlush =
+          returnStraightFlush xs longestStraight
+      | length highestKind == 4 = 
+          returnKindHand highestKind kindsGroupedWithoutHighest
+      | length highestKind == 3 && 
+        length sndHighestKind >= 2 = 
+          returnFullHouse highestKind sndHighestKind
+      | length highestFlush >= 5 = returnFlush highestFlush
+      | length longestStraight >= 5 = returnStraight longestStraight
+      | length highestKind == 3 =
+           returnKindHand highestKind kindsGroupedWithoutHighest
+      | length highestKind == 2 && length sndHighestKind == 2 =
+          returnTwoPair
+            highestKind sndHighestKind kindsGroupedWithoutHighest
+      | length highestKind == 2 =
+          returnKindHand highestKind kindsGroupedWithoutHighest
+      | otherwise = HighCard (take 5 kindsSorted)
 
       where
         kindsSorted = sortByKind xs
@@ -176,25 +168,46 @@ module HoldEm where
         kindsGroupedWithoutHighest = delete highestKind kindsGrouped
         sndHighestKind = getMaxSizeList kindsGroupedWithoutHighest
 
+    returnFullHouse :: [Card] -> [Card] -> PokerHand
+    returnFullHouse highestKind sndHighestKind = 
+      FullHouse (take 5 
+            (highestKind ++ drop (length sndHighestKind - 2) sndHighestKind))
+
+    returnFlush :: [Card] -> PokerHand
+    returnFlush highestFlush = Flush (take 5
+                                  (drop (length highestFlush - 5) highestFlush))
+
+    returnStraight :: [Card] -> PokerHand
+    returnStraight longestStraight = Straight (take 5 (
+                             drop (length longestStraight - 5) longestStraight))
+
     sortByKind :: [Card] -> [Card]
-    sortByKind = sortBy (\(a, _) (b, _)-> compare a b)
+    sortByKind = sortBy (\(a, _) (b, _)-> compare b a)
 
     evaluateHoleHand :: [Card] -> PokerHand
     evaluateHoleHand xs | fst (head xs) == fst (xs!!1) = Pair xs
                         | fst (head xs) > fst (xs!!1) = HighCard [head xs]
                         | otherwise = HighCard [xs!!1]
 
-    getTypeOfStraightFlush :: [Card] -> [Card] -> PokerHand
-    getTypeOfStraightFlush xs straight | fst (last straight) == Ace =
+    returnStraightFlush :: [Card] -> [Card] -> PokerHand
+    returnStraightFlush xs straight | fst (last straight) == Ace =
                                           RoyalFlush straight
                                        | otherwise =
                                           StraightFlush straight
 
-    getTwoPairHand :: [Card] -> [Card] -> [[Card]] -> [Card]
-    getTwoPairHand highestKind sndHighestKind kindsGroupedWithoutHighest =
-      highestKind ++
-      sndHighestKind ++
-      getMaxSizeList (delete sndHighestKind kindsGroupedWithoutHighest)
+    returnTwoPair :: [Card] -> [Card] -> [[Card]] -> PokerHand
+    returnTwoPair highestKind sndHighestKind kindsGroupedWithoutHighest =
+      TwoPair (take 5 (highestKind ++ sndHighestKind ++
+             getMaxSizeList (delete sndHighestKind kindsGroupedWithoutHighest)))
+
+    returnKindHand :: [Card] -> [[Card]] -> PokerHand
+    returnKindHand highestKind kindsGroupedWithoutHighest
+      | highKindLength == 4 = FourOfAKind hand
+      | highKindLength == 3 = ThreeOfAKind hand
+      | highKindLength == 2 = Pair hand
+        where 
+          highKindLength = length highestKind
+          hand = take 5 (highestKind ++ concat kindsGroupedWithoutHighest)
 
     getLongestStraight :: [Card] -> [Card]
     getLongestStraight xs = getMaxSizeList groupedByStraight
@@ -202,7 +215,7 @@ module HoldEm where
 
     groupByStraight :: [[Card]] -> [[Card]]
     groupByStraight [x] = [x]
-    groupByStraight (x:y:xs) | (xVal /= maxBound) && (succ xVal == yVal) =
+    groupByStraight (x:y:xs) | (yVal /= maxBound) && (succ yVal == xVal) =
                                 groupByStraight ((x ++ y) : xs)
                              | otherwise =
                                 x : groupByStraight (y:xs)
@@ -244,7 +257,7 @@ module HoldEm where
           player2 = Player {name="gwilym", hand=[], chips=100,
                             strategy=AggressivePlayer, playerIndex=1}
           player3 = Player {name="miguel", hand=[], chips=100,
-                            strategy=HumanPlayer, playerIndex=2}
+                            strategy=AggressivePlayer, playerIndex=2}
           players = [player1, player2, player3]
           state = GameState {nonBustPlayers=players,
                              playersInRound=[0..length players -1],
@@ -270,13 +283,14 @@ module HoldEm where
         putStr $ "\n" ++ name (head players) ++ " HAS WON ALL THE CHIPS !!!"
         putStrLn $ " IT TOOK HIM " ++ show (count+1) ++ " ROUND(S)"
       else
-        if count == 2 then do
+        if count == 3 then do
           putStrLn $ concat (replicate 100 "*")
           let maxChip = maximum [chips p | p <- players]
               winners = [name p | p <- players, chips p == maxChip]
-              sortedByChips = sortBy (\p1 p2 -> compare (chips p2) (chips p1)) players
-              standings = [name p ++ " WITH " ++ show (chips p) ++ " CHIPS | " |
-                          p <- sortedByChips]
+              sortedByChips = sortBy 
+                              (\p1 p2 -> compare (chips p2) (chips p1)) players
+              standings = [name p ++ " WITH " ++ show (chips p) ++ " CHIPS | " 
+                            | p <- sortedByChips]
           putStrLn $ "\nFINAL STANDINGS AFTER " ++ show count ++ " ROUNDS:"
           putStrLn $ unwords standings
           putStrLn $ "WINNER(S): " ++ show winners
@@ -325,14 +339,17 @@ module HoldEm where
       let allIns = filter (/=0) (allInBets state)
       let playersIn = length (playersInRound state)
       if playersIn > 1 then do
-        state <- dealCards deal state
-        if length allIns < playersIn - 1 then do
+        state <- dealCards deal state 
+        --checking if we should skip to showdown because of all in bets
+        if length allIns < playersIn - 1 then do 
           state <- bettingRound state
           putStrLn $ "\nCURRENT POT IS " ++ show (currentPot state)
           return state
-        else
+        else do --despite skipping, inform community card dealing
+          putStrLn $ "\nCOMMUNITY CARDS ARE NOW : " ++ 
+                      show (communityCards state)
           return state
-      else
+      else 
         return state
 
     clearPlayerHands :: [Player] -> [Player]
@@ -345,9 +362,11 @@ module HoldEm where
       else do
         let comCards = communityCards state
             players = nonBustPlayers state
-            dealer = currentDealerIndex state
-            playersInBetOrder = drop (dealer+1) players ++ take (dealer+1) players
-            unfoldedPlayers = [p | p <- playersInBetOrder, playerIndex p `elem` playersInRound state]
+            dealerIndex = currentDealerIndex state
+            playersInBetOrder = drop (dealerIndex+1) players ++ 
+                                take (dealerIndex+1) players
+            unfoldedPlayers = [p | p <- playersInBetOrder, 
+                                playerIndex p `elem` playersInRound state]
         if null comCards then do
           putStrLn "\nPRE-FLOP BETTING ROUND"
         else do
@@ -375,7 +394,7 @@ module HoldEm where
       else do --for all in blind      
         let betPaid = chips updatedPlayer + blind
         newState <- recordAllInBet state (blindIndex, betPaid)
-        putStr $ "ON THE" ++ blindStr ++ " BLIND"
+        putStrLn $ "ON THE" ++ blindStr ++ " BLIND"
         return newState { nonBustPlayers =
           swap players (updatedPlayer {chips = 0}) blindIndex,
           allInBets = swap (allInBets state) betPaid blindIndex,
@@ -460,7 +479,7 @@ module HoldEm where
     doPlayerBets state (p:ps) = do
       if length (playersInRound state) /= 1 then do
         if not (skipBecauseOfAllIn state p) then do
-          threadDelay (1 * 2000000) -- so human player has time to read
+          threadDelay (1 * 200000) -- so human player has time to read
           playerBet <- bet p state (bets state)
           state <- return state {lastBetterIndex = playerIndex p}
           if playerBet == Nothing then do
@@ -476,9 +495,10 @@ module HoldEm where
                 updatePlayersChips theBet outdatedNonBustPlayers,
                 bets = updatedBets,
                 currentPot = currentPot state + snd theBet }
-            state <- if snd theBet /= 0 && chips (nonBustPlayers state !! playerIndex p) == 0 then do
-                        recordAllInBet state theBet
-                      else return state
+            state <- if snd theBet /= 0 && 
+                        chips (nonBustPlayers state !! playerIndex p) == 0 then 
+                          do recordAllInBet state theBet
+                     else return state
             doPlayerBets state ps
         else
           doPlayerBets state ps
@@ -640,12 +660,15 @@ module HoldEm where
         | length str <= 5 = inpError "INVALID INPUT"
         | length [c | (c, i) <- zip (take 5 str) [0..], c == "raise"!!i] == 5
             = if foldr ((&&) . isDigit) True (drop 5 str) then
-                if parsedInt <= 0 then do inpError "CAN'T RAISE BY ZERO OR LESS"
+                if parsedInt <= 0 then do 
+                  inpError "CAN'T RAISE BY ZERO OR LESS"
                 else do
                   if chips pl >= call + parsedInt then
                     return True
-                  else do inpError "YOU DON'T HAVE ENOUGH CHIPS TO BET THAT"
-              else inpError "INVALID INPUT"
+                  else do 
+                    inpError "YOU DON'T HAVE ENOUGH CHIPS TO BET THAT"
+              else 
+                inpError "INVALID INPUT"
         | otherwise = inpError "INVALID INPUT"
       where parsedInt = read (drop 5 str)
 
