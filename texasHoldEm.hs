@@ -9,9 +9,9 @@ module HoldEm where
     import Data.Char (isSpace, toLower, isDigit)
     import Control.Concurrent
 
-    data Suit = Hearts
+    data Suit = Diamonds
               | Spades
-              | Diamonds
+              | Hearts
               | Clubs deriving(Show, Ord, Eq, Bounded, Enum)
 
     data CardVal = LowAce
@@ -137,7 +137,7 @@ module HoldEm where
 
     evaluateHand :: [Card] -> PokerHand
     evaluateHand xs
-      | length xs == 2 = evaluateHoleHand xs
+      | length xs == 2 = evaluateHoleHand xs kindsSorted
       | length longestStraight >= 5 &&
         longestStraight == highestFlush =
           returnStraightFlush xs longestStraight
@@ -184,10 +184,10 @@ module HoldEm where
     sortByKind :: [Card] -> [Card]
     sortByKind = sortBy (\(a, _) (b, _)-> compare b a)
 
-    evaluateHoleHand :: [Card] -> PokerHand
-    evaluateHoleHand xs | fst (head xs) == fst (xs!!1) = Pair xs
-                        | fst (head xs) > fst (xs!!1) = HighCard [head xs]
-                        | otherwise = HighCard [xs!!1]
+    evaluateHoleHand :: [Card] -> [Card] -> PokerHand
+    evaluateHoleHand xs kindsSorted
+      | fst (head xs) == fst (xs!!1) = Pair xs
+      | otherwise = HighCard kindsSorted
 
     returnStraightFlush :: [Card] -> [Card] -> PokerHand
     returnStraightFlush xs straight | fst (last straight) == Ace =
@@ -232,17 +232,19 @@ module HoldEm where
                                   getMaxSizeList (x:xs)
                                 else getMaxSizeList (y:xs)
 
-    kickerCardCompare :: [Card] -> [Card] -> Ordering
-    kickerCardCompare xs ys = compare (map fst xs) (map fst ys)
+    compareHand :: PokerHand -> PokerHand -> Ordering
+    compareHand hand1 hand2 = compare
+                                (map fst (cards hand1))
+                                (map fst (cards hand2))
 
     determineWinner :: GameState -> [(PlayerIndex, PokerHand)]
     determineWinner state = winner : filter
-              (\(_,a) -> kickerCardCompare (cards a) (cards (snd winner)) == EQ)
+              (\(_,a) -> compareHand a (snd winner) == EQ)
               (tail winnersRanked)
       where
         players = filter (\x -> playerIndex x `elem` playersInRound state) (nonBustPlayers state)
         hands = [(playerIndex x, evaluateHand (hand x)) | x <- players]
-        winnersRanked = sortBy (\(_, a) (_, b)-> compare b a)  hands
+        winnersRanked = sortBy (\(_, a) (_, b)-> compareHand b a)  hands
         winner = head winnersRanked
 
     addLowAces :: [Card] -> [Card]
@@ -257,7 +259,7 @@ module HoldEm where
           player2 = Player {name="gwilym", hand=[], chips=100,
                             strategy=AggressivePlayer, playerIndex=1}
           player3 = Player {name="miguel", hand=[], chips=100,
-                            strategy=AggressivePlayer, playerIndex=2}
+                            strategy=SmartPlayer, playerIndex=2}
           players = [player1, player2, player3]
           state = GameState {nonBustPlayers=players,
                              playersInRound=[0..length players -1],
@@ -531,6 +533,8 @@ module HoldEm where
                       betAggressive p ourCurrentBet betToCall
                    | strategy p == HumanPlayer = do
                       betHuman p state ourCurrentBet betToCall
+                   | strategy p == SmartPlayer = do
+                      betSmart p state ourCurrentBet betToCall
                    | otherwise = return Nothing
       where
         betToCall = snd (getBetToCall bs)
@@ -625,25 +629,39 @@ module HoldEm where
         foldThreshold = 99, raiseThreshold = 20, allInCallThreshold = 30}
       randomBetter pl currBet betToCall randomBetChances
 
-    -- determineHandStrength :: Player -> Double
-    -- determineHandStrength pl = fromEnum plHand + (addHighCardBonus plHand) + 1
-    --   where
-    --     plHand = evaluateHand (hand pl)
+    getNextHighestCard :: [Card] -> CardVal
+    getNextHighestCard cards = fst (head removedHighest)
+      where removedHighest = filter (\x -> fst x /= fst (head cards)) cards
 
-    -- addHighCardBonus :: PokerHand -> Double
-    -- addHighCardBonus hand =  0.99* fromIntegral (fromEnum (fst (head plCards)) + 1) /
-    --                          fromIntegral (fromEnum Ace + 1)
-    --   where
-    --     plCards = cards hand
+    betSmart :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
+    betSmart pl state currBet betToCall = do
+      let winChance = findLikelihoodToWin pl state plHand
+      putStrLn "winChance"
+      print winChance
+      print plHand
+      -- let foldTh = determineFoldThreshold state winChance currBet betToCall
+      let randomBetChances = BetChances{ 
+        foldThreshold = 66, raiseThreshold = 50, allInCallThreshold = 0}
+      randomBetter pl currBet betToCall randomBetChances
+      where
+        plHand = evaluateHand (hand pl)
+    -- determineFoldThreshold :: GameState -> Double -> Int -> Int -> Int
 
-    -- getNextHighestCard :: [Card] -> CardVal
-    -- getNextHighestCard cards = fst (head removedHighest)
-    --   where removedHighest = filter (\x -> fst x /= fst (head cards)) cards
+    -- total the amount of hands that beat players current hand
+    findLikelihoodToWin :: Player -> GameState -> PokerHand -> Double
+    findLikelihoodToWin pl state plHand = 
+      (totalHands - fromIntegral (length (filter 
+        (\x -> compareHand (evaluateHand x) plHand == GT) combinationsOfTwo))) 
+        / totalHands
+      where
+        comCards = communityCards state
+        otherCards = filter (`notElem` hand pl) generateDeck
+        combinationsOfTwo = getTwoHandCombos otherCards
+        totalHands = fromIntegral (length combinationsOfTwo)
 
-    -- betSmart :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
-    -- betSmart pl state currBet betToCall = do
-    --   let handStrength = determineHandStrength (hand pl)
-
+    getTwoHandCombos :: [Card] -> [[Card]]
+    getTwoHandCombos [] = []
+    getTwoHandCombos (c:cs) = [[c, x] | x <- cs] ++ getTwoHandCombos cs
 
 
     betHuman :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
