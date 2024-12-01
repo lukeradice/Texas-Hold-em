@@ -30,7 +30,7 @@ module HoldEm where
                 | Ace  deriving(Show, Ord,  Eq, Bounded, Enum)
 
     generateDeck :: Deck
-    generateDeck = [(val, suit) | suit <- [succ (minBound :: Suit) ..],
+    generateDeck = [(val, suit) | suit <- [(minBound :: Suit) ..],
                       val <- [succ (minBound :: CardVal) ..]]
 
     type Card = (CardVal, Suit)
@@ -69,7 +69,7 @@ module HoldEm where
     data Deal = Community | Hole  deriving(Eq)
 
     data BetChances = BetChances {
-      raiseTh :: Int, foldTh :: Int, allInCallTh :: Int}
+      raiseThreshold :: Int, foldThreshold :: Int, allInCallThreshold :: Int}
 
     dealCards :: Deal -> GameState -> IO GameState
     dealCards deal state = do
@@ -136,15 +136,15 @@ module HoldEm where
                    | RoyalFlush {cards :: [Card]} deriving(Show, Eq, Ord)
 
     evaluateHand :: [Card] -> PokerHand
-    evaluateHand xs 
+    evaluateHand xs
       | length xs == 2 = evaluateHoleHand xs
-      | length longestStraight >= 5 && 
+      | length longestStraight >= 5 &&
         longestStraight == highestFlush =
           returnStraightFlush xs longestStraight
-      | length highestKind == 4 = 
+      | length highestKind == 4 =
           returnKindHand highestKind kindsGroupedWithoutHighest
-      | length highestKind == 3 && 
-        length sndHighestKind >= 2 = 
+      | length highestKind == 3 &&
+        length sndHighestKind >= 2 =
           returnFullHouse highestKind sndHighestKind
       | length highestFlush >= 5 = returnFlush highestFlush
       | length longestStraight >= 5 = returnStraight longestStraight
@@ -169,8 +169,8 @@ module HoldEm where
         sndHighestKind = getMaxSizeList kindsGroupedWithoutHighest
 
     returnFullHouse :: [Card] -> [Card] -> PokerHand
-    returnFullHouse highestKind sndHighestKind = 
-      FullHouse (take 5 
+    returnFullHouse highestKind sndHighestKind =
+      FullHouse (take 5
             (highestKind ++ drop (length sndHighestKind - 2) sndHighestKind))
 
     returnFlush :: [Card] -> PokerHand
@@ -205,7 +205,7 @@ module HoldEm where
       | highKindLength == 4 = FourOfAKind hand
       | highKindLength == 3 = ThreeOfAKind hand
       | highKindLength == 2 = Pair hand
-        where 
+        where
           highKindLength = length highestKind
           hand = take 5 (highestKind ++ concat kindsGroupedWithoutHighest)
 
@@ -287,9 +287,9 @@ module HoldEm where
           putStrLn $ concat (replicate 100 "*")
           let maxChip = maximum [chips p | p <- players]
               winners = [name p | p <- players, chips p == maxChip]
-              sortedByChips = sortBy 
+              sortedByChips = sortBy
                               (\p1 p2 -> compare (chips p2) (chips p1)) players
-              standings = [name p ++ " WITH " ++ show (chips p) ++ " CHIPS | " 
+              standings = [name p ++ " WITH " ++ show (chips p) ++ " CHIPS | "
                             | p <- sortedByChips]
           putStrLn $ "\nFINAL STANDINGS AFTER " ++ show count ++ " ROUNDS:"
           putStrLn $ unwords standings
@@ -339,17 +339,17 @@ module HoldEm where
       let allIns = filter (/=0) (allInBets state)
       let playersIn = length (playersInRound state)
       if playersIn > 1 then do
-        state <- dealCards deal state 
+        state <- dealCards deal state
         --checking if we should skip to showdown because of all in bets
-        if length allIns < playersIn - 1 then do 
+        if length allIns < playersIn - 1 then do
           state <- bettingRound state
           putStrLn $ "\nCURRENT POT IS " ++ show (currentPot state)
           return state
         else do --despite skipping, inform community card dealing
-          putStrLn $ "\nCOMMUNITY CARDS ARE NOW : " ++ 
+          putStrLn $ "\nCOMMUNITY CARDS ARE NOW : " ++
                       show (communityCards state)
           return state
-      else 
+      else
         return state
 
     clearPlayerHands :: [Player] -> [Player]
@@ -363,9 +363,9 @@ module HoldEm where
         let comCards = communityCards state
             players = nonBustPlayers state
             dealerIndex = currentDealerIndex state
-            playersInBetOrder = drop (dealerIndex+1) players ++ 
+            playersInBetOrder = drop (dealerIndex+1) players ++
                                 take (dealerIndex+1) players
-            unfoldedPlayers = [p | p <- playersInBetOrder, 
+            unfoldedPlayers = [p | p <- playersInBetOrder,
                                 playerIndex p `elem` playersInRound state]
         if null comCards then do
           putStrLn "\nPRE-FLOP BETTING ROUND"
@@ -495,8 +495,8 @@ module HoldEm where
                 updatePlayersChips theBet outdatedNonBustPlayers,
                 bets = updatedBets,
                 currentPot = currentPot state + snd theBet }
-            state <- if snd theBet /= 0 && 
-                        chips (nonBustPlayers state !! playerIndex p) == 0 then 
+            state <- if snd theBet /= 0 &&
+                        chips (nonBustPlayers state !! playerIndex p) == 0 then
                           do recordAllInBet state theBet
                      else return state
             doPlayerBets state ps
@@ -530,7 +530,7 @@ module HoldEm where
                    | strategy p == AggressivePlayer = do
                       betAggressive p ourCurrentBet betToCall
                    | strategy p == HumanPlayer = do
-                      humanBet p state ourCurrentBet betToCall
+                      betHuman p state ourCurrentBet betToCall
                    | otherwise = return Nothing
       where
         betToCall = snd (getBetToCall bs)
@@ -541,7 +541,7 @@ module HoldEm where
                              take indexInThisList ps
       where
         lastBetIndex = lastBetterIndex state
-        indexInThisList = head [i | (p, i) <- zip ps [0..], 
+        indexInThisList = head [i | (p, i) <- zip ps [0..],
                               playerIndex p == lastBetIndex ]
 
     updatePlayersChips :: Bet -> [Player] -> [Player]
@@ -609,41 +609,71 @@ module HoldEm where
 
     betRandom :: Player -> Int -> Int -> IO (Maybe Bet)
     betRandom pl currBet betToCall = do
-      let randomBetChances = BetChances{
-        foldTh = 90, raiseTh = 60, allInCallTh = 70}
+      let randomBetChances = BetChances{ --1/3 chance between calling/raising/folding
+        foldThreshold = 66, raiseThreshold = 50, allInCallThreshold = 0}
       randomBetter pl currBet betToCall randomBetChances
 
     betPassive :: Player -> Int -> Int -> IO (Maybe Bet)
     betPassive pl currBet betToCall = do
       let randomBetChances = BetChances{
-        foldTh = 90, raiseTh = 100, allInCallTh = 85}
+        foldThreshold = 90, raiseThreshold = 100, allInCallThreshold = 85}
       randomBetter pl currBet betToCall randomBetChances
 
     betAggressive :: Player -> Int -> Int -> IO (Maybe Bet)
     betAggressive pl currBet betToCall = do
       let randomBetChances = BetChances{
-        foldTh = 99, raiseTh = 20, allInCallTh = 30}
+        foldThreshold = 99, raiseThreshold = 20, allInCallThreshold = 30}
       randomBetter pl currBet betToCall randomBetChances
+
+    -- determineHandStrength :: Player -> Double
+    -- determineHandStrength pl = fromEnum plHand + (addHighCardBonus plHand) + 1
+    --   where
+    --     plHand = evaluateHand (hand pl)
+
+    -- addHighCardBonus :: PokerHand -> Double
+    -- addHighCardBonus hand =  0.99* fromIntegral (fromEnum (fst (head plCards)) + 1) /
+    --                          fromIntegral (fromEnum Ace + 1)
+    --   where
+    --     plCards = cards hand
+
+    -- getNextHighestCard :: [Card] -> CardVal
+    -- getNextHighestCard cards = fst (head removedHighest)
+    --   where removedHighest = filter (\x -> fst x /= fst (head cards)) cards
+
+    -- betSmart :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
+    -- betSmart pl state currBet betToCall = do
+    --   let handStrength = determineHandStrength (hand pl)
+
+
+
+    betHuman :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
+    betHuman pl state currBet betToCall = do
+      putStrLn $ "\nYOUR CHIPS: " ++ show (chips pl)
+      putStrLn $ "BET TO CALL: " ++ show (snd (getBetToCall (bets state)))
+      putStrLn $ "YOUR CURRENT BET: " ++ show currBet
+      putStrLn $ "YOUR HAND: " ++ show (take 2 (hand pl))
+      putStrLn $ "COMMUNITY CARDS: " ++ show (communityCards state)
+      getAction pl currBet betToCall
 
     randomBetter :: Player -> Int -> Int -> BetChances -> IO (Maybe Bet)
     randomBetter pl currBet betToCall betChances = do
       putStrLn $ "\nbet to call is " ++ show betToCall
 
       foldChance <- randomInt 1 100
-      if foldChance > foldTh betChances then fold pl
+      if foldChance > foldThreshold betChances then fold pl
       else do
 
         let chipsLeft = chips pl
             callToMake = betToCall - currBet
 
         raiseChance <- randomInt 1 100
-        if chipsLeft > callToMake && raiseChance > raiseTh betChances then do
+        if chipsLeft > callToMake && raiseChance > raiseThreshold betChances then do
           bet <- raise pl callToMake
           return $ Just bet
         else do
           if chipsLeft <= callToMake then do
             allInChance <- randomInt 1 100
-            if allInChance > allInCallTh betChances then
+            if allInChance > allInCallThreshold betChances then
               return $ Just (playerIndex pl, chipsLeft)
             else fold pl
           else do
@@ -660,14 +690,14 @@ module HoldEm where
         | length str <= 5 = inpError "INVALID INPUT"
         | length [c | (c, i) <- zip (take 5 str) [0..], c == "raise"!!i] == 5
             = if foldr ((&&) . isDigit) True (drop 5 str) then
-                if parsedInt <= 0 then do 
+                if parsedInt <= 0 then do
                   inpError "CAN'T RAISE BY ZERO OR LESS"
                 else do
                   if chips pl >= call + parsedInt then
                     return True
-                  else do 
+                  else do
                     inpError "YOU DON'T HAVE ENOUGH CHIPS TO BET THAT"
-              else 
+              else
                 inpError "INVALID INPUT"
         | otherwise = inpError "INVALID INPUT"
       where parsedInt = read (drop 5 str)
@@ -699,14 +729,5 @@ module HoldEm where
               " CHIPS" ++ " TO RAISE BY " ++ show raiseAmount
             return $ Just bet
           else getAction pl currBet betToCall
-
-    humanBet :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
-    humanBet pl state currBet betToCall = do
-      putStrLn $ "\nYOUR CHIPS: " ++ show (chips pl)
-      putStrLn $ "BET TO CALL: " ++ show (snd (getBetToCall (bets state)))
-      putStrLn $ "YOUR CURRENT BET: " ++ show currBet
-      putStrLn $ "YOUR HAND: " ++ show (take 2 (hand pl))
-      putStrLn $ "COMMUNITY CARDS: " ++ show (communityCards state)
-      getAction pl currBet betToCall
 
 
