@@ -638,7 +638,8 @@ module HoldEm where
 
     betSmart :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
     betSmart pl state currBet betToCall = do
-      let estimatedWin = estimateWinChance pl state plHand
+      print $ length (filter (`notElem` hand pl) generateDeck)
+      estimatedWin <- estimateWinChance pl state plHand
       putStrLn "estimatedWin"
       print estimatedWin
       print plHand
@@ -769,10 +770,12 @@ module HoldEm where
     --     totalChipsBeforeRound = currBet + chips pl
 
     -- total the amount of hands that beat players current hand
-    estimateWinChance :: Player -> GameState -> PokerHand -> Double
-    estimateWinChance pl state plHand =
+    estimateWinChance :: Player -> GameState -> PokerHand -> IO Double
+    estimateWinChance pl state plHand = do
       --assumes independence for simplicity
-      ((totalHands - loseHands) / totalHands)**numOpponents
+      putStrLn $ "LOST HANDS " ++ show loseHands
+      putStrLn $ "TOTAL HANDS " ++ show totalHands
+      return $ ((totalHands - loseHands) / totalHands)**numOpponents
       where
         numOpponents = fromIntegral (length (playersInRound state) - 1)
         comCards = communityCards state
