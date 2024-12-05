@@ -270,8 +270,8 @@ module HoldEm where
                              currentPot=0,
                              bets=[],
                              currentDealerIndex=0,
-                             smallBlind=10,
-                             bigBlind=20,
+                             smallBlind=5,
+                             bigBlind=10,
                              lastBetterIndex=0,
                              allInBets = replicate (length players) 0 }
       putStrLn $ concat (replicate 100 "*")
@@ -287,7 +287,7 @@ module HoldEm where
         putStr $ "\n" ++ name (head players) ++ " HAS WON ALL THE CHIPS !!!"
         putStrLn $ " IT TOOK HIM " ++ show (count+1) ++ " ROUND(S)"
       else
-        if count == 3 then do
+        if count == 100 then do
           putStrLn $ concat (replicate 100 "*")
           let maxChip = maximum [chips p | p <- players]
               winners = [name p | p <- players, chips p == maxChip]
@@ -483,7 +483,7 @@ module HoldEm where
     doPlayerBets state (p:ps) = do
       if length (playersInRound state) /= 1 then do
         if not (skipBecauseOfAllIn state p) then do
-          threadDelay (1 * 200000) -- so human player has time to read
+          -- threadDelay (1 * 200000) -- so human player has time to read
           playerBet <- bet p state (bets state)
           state <- return state {lastBetterIndex = playerIndex p}
           if playerBet == Nothing then do
@@ -513,8 +513,8 @@ module HoldEm where
     wentAllIn state p = (allInBets state !! playerIndex p) > 0
 
     skipBecauseOfAllIn :: GameState -> Player -> Bool
-    skipBecauseOfAllIn state p | betToCall /= ourCurrentBet = False
-                               | allIns!!playerIndex p > 0 = True
+    skipBecauseOfAllIn state p | allIns!!playerIndex p > 0 = True
+                               | betToCall /= ourCurrentBet = False
                                | amount == length playersIn - 1  = True
                                | otherwise = False
       where
@@ -685,115 +685,71 @@ module HoldEm where
     getSmartBetParams :: Double -> SmartBetParams
     getSmartBetParams estimatedWin
       | estimatedWin >= 0.75 = SmartBetParams {
-          bottomEstWinRange=0.75, lowerBoundBetPercentage=0.3,
+          bottomEstWinRange=0.75, lowerBoundBetPercentage=0.4,
           betPercentageRangeSize=0.3, betPercentageFoldThreshold=1}
       | estimatedWin >= 0.5 = SmartBetParams {
-            bottomEstWinRange=0.5, lowerBoundBetPercentage=0.15,
-            betPercentageRangeSize=0.15, betPercentageFoldThreshold=0.5}
+            bottomEstWinRange=0.5, lowerBoundBetPercentage=0.2,
+            betPercentageRangeSize=0.2, betPercentageFoldThreshold=0.45}
       | estimatedWin >= 0.25 = SmartBetParams {
             bottomEstWinRange=0.25, lowerBoundBetPercentage=0.1,
-            betPercentageRangeSize=0.05, betPercentageFoldThreshold=0.4}
+            betPercentageRangeSize=0.05, betPercentageFoldThreshold=0.2}
       | otherwise = SmartBetParams {
             bottomEstWinRange=0, lowerBoundBetPercentage=0,
-            betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.3}
+            betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.15}
 
 
     decideSmartBet :: Player -> Int -> Double -> SmartBetParams -> Int -> Int
                                                                -> IO (Maybe Bet)
     decideSmartBet pl roundsLeft estimatedWin params currBet betToCall = do
+      putStrLn $ "CURRENT BET IS " ++ show currBet
       -- aim to bet goalBet% of your starting chips by the end of the 4 rounds
       let goalBetPercentage = betRangeSize*(estimatedWin - bottomRange) / 0.25 +
                                                                    lowerBoundBet
           --calculate how much of that goal bet percentage to aim to bet now
           --to be on trajectory to meet that goal bet percentage                                                         
           percentageToBetThisRound = (goalBetPercentage -
-                        fromIntegral currBet/fromIntegral totalChipsBeforeRound)
+                                     fromIntegral currBet/totalChipsBeforeRound)
                                                        / fromIntegral roundsLeft
+          betIWant = ceiling (percentageToBetThisRound * totalChipsBeforeRound)
 
+      putStrLn $ show goalBetPercentage ++ " IS THE GOAL BET PERCENTAGE"
+      putStrLn $ show percentageToBetThisRound ++ " IS HOW MUCH WE WANNA BET THIS ROUND"
       --if we don't need to bet more this round to meet target bet %
-      if percentageToBetThisRound <= 0 then
-        if fromIntegral betToCall/fromIntegral totalChipsBeforeRound >
-                                                       foldThreshold then  --fold
+      if percentageToBetThisRound <= 0 || currBet + betIWant < betToCall then
+        if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold then  
           fold pl
         else do --call
-          if plChips > (betToCall - currBet) then do
-            call <- callOrCheck pl (betToCall - currBet)
+          if plChips > betToMeetCall then do
+            call <- callOrCheck pl betToMeetCall
             return $ Just call
           else
             return $ Just (playerIndex pl, plChips)
       --if we need to put a bet forward to meet target %, will have to call or
       --raise
-      else do
-        let bet = min plChips (max (betToCall - currBet)
-                                      (ceiling (percentageToBetThisRound *
-                                           fromIntegral totalChipsBeforeRound)))
-        putStrLn $ "SMART BET " ++ show bet ++ " FROM CHIPS: " ++ show plChips
-        if currBet + bet > betToCall then do --raise
-          outputRaise pl betToCall bet
-          return $ Just (playerIndex pl, bet)
-        else do --call
-          call <- callOrCheck pl (betToCall - currBet)
-          return $ Just call
+      else do --raise
+        putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++ show plChips
+        -- if currBet + betIWant > betToCall then do --raise
+        outputRaise pl betIWant betToCall
+        return $ Just (playerIndex pl, betIWant)
+        -- else do --call
+        --     if plChips > betToMeetCall then do
+        --       call <- callOrCheck pl betToMeetCall
+        --       return $ Just call
+        --     else
+        --       return $ Just (playerIndex pl, plChips)
       where
-
-        totalChipsBeforeRound = currBet + chips pl
+        betToMeetCall = betToCall - currBet
+        totalChipsBeforeRound = fromIntegral (currBet + chips pl)
         bottomRange = bottomEstWinRange params
         lowerBoundBet = lowerBoundBetPercentage params
         betRangeSize = betPercentageRangeSize params
         foldThreshold = betPercentageFoldThreshold params
         plChips = chips pl
 
-
-    -- makeOver50BetDecision :: Player -> Int -> Double -> Int -> Int -> Maybe Bet
-    -- makeOver50BetDecision pl roundsLeft estimatedWin currBet betToCall = do
-    -- -- aim to bet 15-30% of your starting chips by the end of 4 betting rounds
-    --   let goalBetPercentage = 0.1*(estimatedWin - 0.5) / 0.25 + 0.2
-    --       percentageToBetThisRound = 
-    --           (goalBetPercentage - fromIntegral(currBet/totalChipsBeforeRound))
-    --             / fromIntegral roundsLeft
-    --   if percentageToBetThisRound <= 0 then 
-    --     if betToCall/totalChipsBeforeRound > 0.35 then --fold
-    --       Nothing
-    --     else --call
-    --       Just (playerIndex pl, betToCall - currBet)
-    --   else --raise
-    --     Just (playerIndex pl, 
-    --     ceiling (percentageToBetThisRound * fromIntegral totalChipsBeforeRound))        
-    --   where
-    --     totalChipsBeforeRound = currBet + chips pl
-
-    -- makeOver25BetDecision :: Player -> Int -> Double -> Int -> Int -> Maybe Bet
-    -- makeOver25BetDecision pl roundsLeft estimatedWin currBet betToCall = do
-    -- -- aim to bet 10-15% of your chips by the end of 4 betting rounds
-    --   let totalBetPercentage = 0.05*(estimatedWin - 0.25) / 0.25 + 0.1
-    --       aimToBetThisRound = totalBetPercentage - currBet/totalChipsBeforeRound
-    --   if aimToBetThisRound <= 0 then --call
-    --     Just (playerIndex pl, betToCall - currBet)
-    --   else --raise
-    --     Just (playerIndex pl, aimToBetThisRound)
-    --   where
-    --     amountComCards = length (communityCards state)
-    --     totalChipsBeforeRound = currBet + chips pl
-
-    -- makeUnder25BetDecision :: Player -> Int -> Double -> Int -> Int -> Maybe Bet
-    -- makeUnder25BetDecision pl roundsLeft estimatedWin currBet betToCall = do
-    -- -- aim to bet 0-10% of your chips by the end of 4 betting rounds
-    --   let totalBetPercentage = 0.1*estimatedWin / 0.25
-    --       aimToBetThisRound = totalBetPercentage - currBet/totalChipsBeforeRound
-    --   if aimToBetThisRound <= 0 then --call
-    --     Just (playerIndex pl, betToCall - currBet)
-    --   else --raise
-    --     Just (playerIndex pl, aimToBetThisRound)
-    --   where
-    --     amountComCards = length (communityCards state)
-    --     totalChipsBeforeRound = currBet + chips pl
-
     -- total the amount of hands that beat players current hand
     estimateWinChance :: Player -> GameState -> PokerHand -> IO Double
     estimateWinChance pl state plHand = do
       --assumes independence for simplicity
-      -- putStrLn $ "LOST HANDS " ++ show loseHands
-      -- putStrLn $ "TOTAL HANDS " ++ show totalHands
       return $ ((totalHands - loseHands) / totalHands)
       -- **numOpponents
       where
@@ -831,9 +787,10 @@ module HoldEm where
             callToMake = betToCall - currBet
 
         raiseChance <- randomInt 1 100
-        if chipsLeft > callToMake && raiseChance > raiseThreshold betChances then do
-          bet <- randomRaise pl callToMake
-          return $ Just bet
+        if chipsLeft > callToMake &&
+           raiseChance > raiseThreshold betChances then do
+              bet <- randomRaise pl callToMake
+              return $ Just bet
         else do
           if chipsLeft <= callToMake then do
             allInChance <- randomInt 1 100
@@ -894,4 +851,17 @@ module HoldEm where
             return $ Just bet
           else getAction pl currBet betToCall
 
+-- trial 1: 
+-- M:11
+-- G:9
+-- W:1
 
+-- trial 2: (greater blinds ratio)
+-- M: 11
+-- G: 8
+-- W: 3
+
+-- trial 3: (max 100 rounds)
+-- M: 13
+-- G: 7
+-- W: 2
