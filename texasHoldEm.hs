@@ -233,9 +233,11 @@ module HoldEm where
                                 else getMaxSizeList (y:xs)
 
     compareHand :: PokerHand -> PokerHand -> Ordering
-    compareHand hand1 hand2 = compare
-                                (map fst (cards hand1))
-                                (map fst (cards hand2))
+    compareHand hand1 hand2 | hand1{cards=[]} == hand2{cards=[]} =
+                                compare
+                                  (map fst (cards hand1))
+                                  (map fst (cards hand2))
+                            | otherwise = compare hand1 hand2
 
     determineWinner :: GameState -> [(PlayerIndex, PokerHand)]
     determineWinner state = winner : filter
@@ -244,7 +246,7 @@ module HoldEm where
       where
         players = filter (\x -> playerIndex x `elem` playersInRound state) (nonBustPlayers state)
         hands = [(playerIndex x, evaluateHand (hand x)) | x <- players]
-        winnersRanked = sortBy (\(_, a) (_, b)-> compareHand b a)  hands
+        winnersRanked = sortBy (\(_, a) (_, b)-> compare b a)  hands
         winner = head winnersRanked
 
     addLowAces :: [Card] -> [Card]
@@ -587,14 +589,14 @@ module HoldEm where
     randomRaise pl call = do
       amountRaisedPercentage <- randomPercentage
       let raise = ceiling (fromIntegral
-                (chips pl - call)*amountRaisedPercentage*damper)
-      outputRaise pl raise call
+                (chips pl - call)*amountRaisedPercentage)
+      when (chips pl - call + raise > 0) $ do outputRaise pl raise call
       return (playerIndex pl, call + raise)
 
     outputRaise :: Player -> Int -> Int -> IO ()
     outputRaise pl raise call = do
       putStr $ name pl ++ " HAS BET " ++ show (call + raise)
-      if call /= 0 then 
+      if call /= 0 then
         putStrLn $ " TO RAISE BY " ++ show raise
       else putStr "\n"
 
@@ -648,7 +650,7 @@ module HoldEm where
         plHand = evaluateHand (hand pl)
 
     getSmartBet :: GameState -> Player -> Double -> Int -> Int -> IO (Maybe Bet)
-    getSmartBet state pl estimatedWin currBet betToCall = 
+    getSmartBet state pl estimatedWin currBet betToCall =
            decideSmartBet pl betRoundsLeft estimatedWin params currBet betToCall
         where
           params = getSmartBetParams estimatedWin
@@ -687,13 +689,13 @@ module HoldEm where
           betPercentageRangeSize=0.3, betPercentageFoldThreshold=1}
       | estimatedWin >= 0.5 = SmartBetParams {
             bottomEstWinRange=0.5, lowerBoundBetPercentage=0.15,
-            betPercentageRangeSize=0.15, betPercentageFoldThreshold=0.35}
+            betPercentageRangeSize=0.15, betPercentageFoldThreshold=0.5}
       | estimatedWin >= 0.25 = SmartBetParams {
             bottomEstWinRange=0.25, lowerBoundBetPercentage=0.1,
-            betPercentageRangeSize=0.05, betPercentageFoldThreshold=0.2}
+            betPercentageRangeSize=0.05, betPercentageFoldThreshold=0.4}
       | otherwise = SmartBetParams {
             bottomEstWinRange=0, lowerBoundBetPercentage=0,
-            betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.15}
+            betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.3}
 
 
     decideSmartBet :: Player -> Int -> Double -> SmartBetParams -> Int -> Int
@@ -702,27 +704,44 @@ module HoldEm where
       -- aim to bet goalBet% of your starting chips by the end of the 4 rounds
       let goalBetPercentage = betRangeSize*(estimatedWin - bottomRange) / 0.25 +
                                                                    lowerBoundBet
+          --calculate how much of that goal bet percentage to aim to bet now
+          --to be on trajectory to meet that goal bet percentage                                                         
           percentageToBetThisRound = (goalBetPercentage -
                         fromIntegral currBet/fromIntegral totalChipsBeforeRound)
                                                        / fromIntegral roundsLeft
+
+      --if we don't need to bet more this round to meet target bet %
       if percentageToBetThisRound <= 0 then
         if fromIntegral betToCall/fromIntegral totalChipsBeforeRound >
                                                        foldThreshold then  --fold
           fold pl
         else do --call
-          bet <- callOrCheck pl (betToCall - currBet)
-          return $ Just bet
-      else do --raise
-        let raise = ceiling (percentageToBetThisRound *
-                                             fromIntegral totalChipsBeforeRound)
-        outputRaise pl betToCall raise
-        return $ Just (playerIndex pl, raise)
+          if plChips > (betToCall - currBet) then do
+            call <- callOrCheck pl (betToCall - currBet)
+            return $ Just call
+          else
+            return $ Just (playerIndex pl, plChips)
+      --if we need to put a bet forward to meet target %, will have to call or
+      --raise
+      else do
+        let bet = min plChips (max (betToCall - currBet)
+                                      (ceiling (percentageToBetThisRound *
+                                           fromIntegral totalChipsBeforeRound)))
+        putStrLn $ "SMART BET " ++ show bet ++ " FROM CHIPS: " ++ show plChips
+        if currBet + bet > betToCall then do --raise
+          outputRaise pl betToCall bet
+          return $ Just (playerIndex pl, bet)
+        else do --call
+          call <- callOrCheck pl (betToCall - currBet)
+          return $ Just call
       where
+
         totalChipsBeforeRound = currBet + chips pl
         bottomRange = bottomEstWinRange params
         lowerBoundBet = lowerBoundBetPercentage params
         betRangeSize = betPercentageRangeSize params
         foldThreshold = betPercentageFoldThreshold params
+        plChips = chips pl
 
 
     -- makeOver50BetDecision :: Player -> Int -> Double -> Int -> Int -> Maybe Bet
@@ -773,9 +792,10 @@ module HoldEm where
     estimateWinChance :: Player -> GameState -> PokerHand -> IO Double
     estimateWinChance pl state plHand = do
       --assumes independence for simplicity
-      putStrLn $ "LOST HANDS " ++ show loseHands
-      putStrLn $ "TOTAL HANDS " ++ show totalHands
-      return $ ((totalHands - loseHands) / totalHands)**numOpponents
+      -- putStrLn $ "LOST HANDS " ++ show loseHands
+      -- putStrLn $ "TOTAL HANDS " ++ show totalHands
+      return $ ((totalHands - loseHands) / totalHands)
+      -- **numOpponents
       where
         numOpponents = fromIntegral (length (playersInRound state) - 1)
         comCards = communityCards state
@@ -783,7 +803,7 @@ module HoldEm where
         combinationsOfTwo = getTwoHandCombos otherCards
         totalHands = fromIntegral (length combinationsOfTwo)
         loseHands = fromIntegral (length (filter
-           (\x -> compareHand (evaluateHand x) plHand == GT) combinationsOfTwo))
+           (\x -> compareHand (evaluateHand (x ++ comCards)) plHand == GT) combinationsOfTwo))
 
     getTwoHandCombos :: [Card] -> [[Card]]
     getTwoHandCombos [] = []
