@@ -54,6 +54,9 @@ module HoldEm where
     type BetQuantity = Int
     type Bet = (PlayerIndex, BetQuantity)
 
+    type AmountOwedByOtherPlayers = [Int]
+    type AllInBet = (AmountOwedByOtherPlayers, BetQuantity)
+
     data GameState = GameState { nonBustPlayers :: [Player],
                                  playersInRound :: [Int],
                                  deck :: Deck,
@@ -64,7 +67,7 @@ module HoldEm where
                                  smallBlind :: Int,
                                  bigBlind :: Int,
                                  lastBetterIndex :: Int,
-                                 allInBets :: [Int] } deriving(Show)
+                                 allInBets :: [AllInBet] } deriving(Show)
 
     data Deal = Community | Hole  deriving(Eq)
 
@@ -270,10 +273,10 @@ module HoldEm where
                              currentPot=0,
                              bets=[],
                              currentDealerIndex=0,
-                             smallBlind=5,
-                             bigBlind=10,
+                             smallBlind=3,
+                             bigBlind=6,
                              lastBetterIndex=0,
-                             allInBets = replicate (length players) 0 }
+                             allInBets = [([0 .. length players], 0) | i <- [0..length players]]}
       putStrLn $ concat (replicate 100 "*")
       putStrLn "STARTING GAME\n"
       gameLoop state 0
@@ -308,9 +311,9 @@ module HoldEm where
       state <- return state { deck = generateDeck,
                               nonBustPlayers =
                        clearPlayerHands (nonBustPlayers state),
-                       playersInRound = [0..(length (nonBustPlayers state) -1)],
+                       playersInRound = [0..(length players -1)],
                        communityCards = [],
-                       allInBets = replicate (length (nonBustPlayers state)) 0}
+                      allInBets = [([0 .. length players], 0) | i <- [0..length players]]}
       state <- shuffleDeck state
       state <- payBlinds state
       state <- initiateBets state Hole
@@ -320,6 +323,8 @@ module HoldEm where
       putStrLn ""
       state <- payout state
       removeBustPlayers state [0..length (nonBustPlayers state)-1]
+      where
+        players = nonBustPlayers state
 
     removeBustPlayers :: GameState -> [Int] -> IO GameState
     removeBustPlayers state [] = return state
@@ -340,7 +345,7 @@ module HoldEm where
 
     initiateBets :: GameState -> Deal -> IO GameState
     initiateBets state deal = do
-      let allIns = filter (/=0) (allInBets state)
+      let allIns = filter (\x -> snd x /=0) (allInBets state)
       let playersIn = length (playersInRound state)
       if playersIn > 1 then do
         state <- dealCards deal state
@@ -397,11 +402,16 @@ module HoldEm where
         return newState
       else do --for all in blind      
         let betPaid = chips updatedPlayer + blind
-        newState <- recordAllInBet state (blindIndex, betPaid)
+        --negative bets indicates the all in bet was on the blind
+        state <- if not (null (map (\x -> snd x < -betPaid) (allInBets state))) 
+                 then
+                    return $ addAllInPlayerCall state blindIndex (blindIndex-1)
+                 else
+                   return $ addAllInPlayerCall state (blindIndex-1) blindIndex
+        newState <- recordAllInBet state [] (blindIndex, -betPaid)
         putStrLn $ "ON THE" ++ blindStr ++ " BLIND"
         return newState { nonBustPlayers =
           swap players (updatedPlayer {chips = 0}) blindIndex,
-          allInBets = swap (allInBets state) betPaid blindIndex,
           currentPot = currentPot state + betPaid }
 
       where
@@ -415,20 +425,31 @@ module HoldEm where
         player = players !! blindIndex
         updatedPlayer = player {chips = chips player - blind}
 
+    --if not in already, adds a players index to the all in bet list of players who've called 
+    addAllInPlayerCall :: GameState -> PlayerIndex -> PlayerIndex -> GameState
+    addAllInPlayerCall state p1 p2
+      | p2 `elem` fst allInBet = state
+      | otherwise = state {allInBets = swap
+                      (allInBets state) (fst allInBet ++ [p2], snd allInBet) p1}
+      where allInBet = allInBets state !! p1
+
     getAllInWinners :: [(PlayerIndex, PokerHand)] -> GameState ->
-                                                            [(PlayerIndex, Int)]
+                                                       [(PlayerIndex, AllInBet)]
     getAllInWinners ps state = sortBy (\(_, a) (_, b) -> compare a b)
-                                   [(p, allIns!!p)| (p, _) <- ps, allIns!!p > 0]
+                                   [(p, allIns!!p)| (p, _) <- ps, snd (allIns!!p) > 0]
       where allIns = allInBets state
 
     payWinners :: GameState -> [Player] -> [(PlayerIndex, PokerHand)] -> Int
                                                                  -> IO GameState
-    payWinners state ps [] potLeft = return state {currentPot = potLeft}
-    payWinners state ps (w:ws) potLeft = do
+    payWinners state ps [] numWinners = return state {
+                                     currentPot = currentPot state - numWinners}
+    payWinners state ps (w:ws) numWinners = do
+      putStrLn $ "WINNERS " ++ show (w:ws)
+      when (length (w:ws) > 1) $ do putStrLn "MORE THAN ONE!!"
       let allInWins = getAllInWinners ws state
       if null allInWins then do
         let player = players !! fst w
-            winning = currentPot state `div` length (w:ws)
+            winning = currentPot state `div` numWinners
             updatedPlayer = player {chips = chips player + winning}
         putStr $ name player ++ " WINS " ++ show winning
         if length ps > 1 then do
@@ -437,29 +458,32 @@ module HoldEm where
           putStrLn " CHIPS AS ALL OTHER PLAYERS FOLDED"
         state <- return state {nonBustPlayers =
                                              swap players updatedPlayer (fst w)}
-        payWinners state ps ws (potLeft - winning)
+        payWinners state ps ws numWinners
       else do
         let allInBet = head allInWins
-            winning = snd allInBet*length ps `div` length (w:ws)
+            winning = snd (snd allInBet)*length ps `div` numWinners
             pIndex = fst allInBet
             player = players !! pIndex
             updatedPlayer = player {chips = chips player + winning}
         let hand = head (filter (\(a,_) -> a == pIndex) (w:ws))
         putStr $ name player ++ " WINS " ++ show winning
-        putStr $ " CHIPS FROM SIDEPOT WITH A HAND OF " ++ show (snd hand)
+        putStrLn $ " CHIPS FROM SIDEPOT WITH A HAND OF " ++ show (snd hand)
         state <- return state {
           nonBustPlayers = swap players updatedPlayer pIndex,
+          --decreasing other total all in bet amounts from what was given out in this main/side pot
           allInBets = map
-                        (\x -> if x >= snd allInBet then x-snd allInBet else x)
-                        (allInBets state)}
+                (\x -> if x >= snd allInBet then 
+                  (fst x, snd x - snd (snd allInBet)) 
+                else x)
+                (allInBets state)}
 
-        payWinners state ps (delete (pIndex, snd hand) (w:ws)) (potLeft - winning)
+        payWinners state ps (delete (pIndex, snd hand) (w:ws)) numWinners
       where
         players = nonBustPlayers state
 
     payout :: GameState -> IO GameState
     payout state = do
-       payWinners state players winners pot
+       payWinners state players winners (length winners)
       where
         players = [nonBustPlayers state!!i | i <- playersInRound state]
         winners = determineWinner state
@@ -501,7 +525,7 @@ module HoldEm where
                 currentPot = currentPot state + snd theBet }
             state <- if snd theBet /= 0 &&
                         chips (nonBustPlayers state !! playerIndex p) == 0 then
-                          do recordAllInBet state theBet
+                          do recordAllInBet state [] theBet
                      else return state
             doPlayerBets state ps
         else
@@ -510,17 +534,17 @@ module HoldEm where
         return state
 
     wentAllIn :: GameState -> Player -> Bool
-    wentAllIn state p = (allInBets state !! playerIndex p) > 0
+    wentAllIn state p = snd (allInBets state !! playerIndex p) > 0
 
     skipBecauseOfAllIn :: GameState -> Player -> Bool
-    skipBecauseOfAllIn state p | allIns!!playerIndex p > 0 = True
+    skipBecauseOfAllIn state p | snd (allIns!!playerIndex p) > 0 = True
                                | betToCall /= ourCurrentBet = False
                                | amount == length playersIn - 1  = True
                                | otherwise = False
       where
         allIns = allInBets state
         playersIn = playersInRound state
-        amount = length (filter (/=0) allIns)
+        amount = length (filter (\x -> snd x /=0) allIns)
         bs = bets state
         betToCall = snd (getBetToCall bs)
         ourCurrentBet = snd (head (filter (\(a, _) -> a == playerIndex p) bs))
@@ -572,11 +596,11 @@ module HoldEm where
     damper :: Float
     damper = 0.6
 
-    recordAllInBet :: GameState -> Bet -> IO GameState
-    recordAllInBet state bet = do
-      putStrLn $ pName ++ " IS ALL IN WITH BET OF " ++ show (snd bet)
+    recordAllInBet :: GameState -> [Int] -> Bet -> IO GameState
+    recordAllInBet state callersSoFar bet = do
+      putStrLn $ pName ++ " IS ALL IN WITH BET OF " ++ show (abs (snd bet))
       return state {
-        allInBets = swap allInData (snd bet) pIndex }
+        allInBets = swap allInData (callersSoFar, snd bet) pIndex }
       where
         pIndex = fst bet
         allInData = allInBets state
@@ -660,21 +684,6 @@ module HoldEm where
             4 -> 2
             5 -> 1
 
-    -- makeOver75BetDecision :: Player -> Int -> Double -> Int -> Int -> Maybe Bet
-    -- makeOver75BetDecision pl roundsLeft estimatedWin currBet betToCall = do
-    -- -- aim to bet 30-60% of your starting chips by the end of 4 betting rounds
-    --   let goalBetPercentage = 0.3*(estimatedWin - 0.75) / 0.25 + 0.3
-    --       percentageToBetThisRound = 
-    --           (goalBetPercentage - fromIntegral(currBet/totalChipsBeforeRound))
-    --             / fromIntegral roundsLeft
-    --   if percentageToBetThisRound <= 0 then --call
-    --     Just (playerIndex pl, betToCall - currBet)
-    --   else --raise
-    --     Just (playerIndex pl, 
-    --     ceiling (percentageToBetThisRound * fromIntegral totalChipsBeforeRound))
-    --   where
-    --     totalChipsBeforeRound = currBet + chips pl
-
     data SmartBetParams = SmartBetParams {
       bottomEstWinRange :: Double,
       lowerBoundBetPercentage :: Double,
@@ -716,7 +725,7 @@ module HoldEm where
       putStrLn $ show percentageToBetThisRound ++ " IS HOW MUCH WE WANNA BET THIS ROUND"
       --if we don't need to bet more this round to meet target bet %
       if percentageToBetThisRound <= 0 || currBet + betIWant < betToCall then
-        if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold then  
+        if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold then
           fold pl
         else do --call
           if plChips > betToMeetCall then do
@@ -728,15 +737,8 @@ module HoldEm where
       --raise
       else do --raise
         putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++ show plChips
-        -- if currBet + betIWant > betToCall then do --raise
         outputRaise pl betIWant betToCall
         return $ Just (playerIndex pl, betIWant)
-        -- else do --call
-        --     if plChips > betToMeetCall then do
-        --       call <- callOrCheck pl betToMeetCall
-        --       return $ Just call
-        --     else
-        --       return $ Just (playerIndex pl, plChips)
       where
         betToMeetCall = betToCall - currBet
         totalChipsBeforeRound = fromIntegral (currBet + chips pl)
@@ -851,17 +853,3 @@ module HoldEm where
             return $ Just bet
           else getAction pl currBet betToCall
 
--- trial 1: 
--- M:11
--- G:9
--- W:1
-
--- trial 2: (greater blinds ratio)
--- M: 11
--- G: 8
--- W: 3
-
--- trial 3: (max 100 rounds)
--- M: 13
--- G: 7
--- W: 2
