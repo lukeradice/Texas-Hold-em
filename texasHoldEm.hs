@@ -289,7 +289,7 @@ module HoldEm where
         putStr $ "\n" ++ name (head players) ++ " HAS WON ALL THE CHIPS !!!"
         putStrLn $ " IT TOOK HIM " ++ show (count+1) ++ " ROUND(S)"
       else
-        if count == 2 then do
+        if count == 100 then do
           putStrLn $ concat (replicate 100 "*")
           let maxChip = maximum [chips p | p <- players]
               winners = [name p | p <- players, chips p == maxChip]
@@ -410,7 +410,7 @@ module HoldEm where
       else do --for all in blind      
         let betPaid = chips updatedPlayer + blind
         --update roundwise bet value to show all in
-        state <- return state {roundwiseBets = map 
+        state <- return state {roundwiseBets = map
               (\(x,y) -> if x == blindIndex then (x,betPaid) else (x,y))
               (roundwiseBets state) }
         newState <- recordAllInBet state (blindIndex, betPaid)
@@ -441,109 +441,64 @@ module HoldEm where
     payWinners :: GameState -> [Player] -> [(PlayerIndex, PokerHand)] -> Int
                                                          -> Bool -> IO GameState
     payWinners state [] _ _ _  = return state
-    payWinners state ps ws potLeft isMainPot = do
-      when (length ws > 1) $ do putStrLn "MORE THAN ONE!!!!!!!!!!!!!!"
-      let allInWins = getMinAllInWinners ws state
-      -- when (length allInWins > 1) $ do putStrLn "MORE THAN ONE!!!!!!!!!!!!!!"
+    payWinners state playersIn winners potLeft isMainPot = do
+      let allInWins = getMinAllInWinners winners state
       if null allInWins then do
-        let winning = potLeft `div` length ws
-            winningPlayerIndicies = map fst ws
+        let winning = potLeft `div` length winners
+            winningPlayerIndicies = map fst winners
             winnersPayed = map (\x ->
                 if playerIndex x `elem` winningPlayerIndicies then
                   x {chips = chips x + winning}
                 else x)
                 players
-        outputPotWinners ps ws winning isMainPot
-        -- let winString = if length ps > 1 then 
-        --                   unwords [name (ps!!fst w) ++ " WINS " ++ 
-        --                           show winning ++
-        --                           " CHIPS WITH A HAND OF " ++ 
-        --                            show (snd w) ++ "\n"| w <- ws]
-        --                 else 
-        --                   name (head ps) ++ " WINS " ++ show winning ++ 
-        --                     " CHIPS AS ALL OTHER PLAYERS FOLDED"
-        -- if isMainPot then do putStrLn "MAIN POT WINNERS:"
-        -- else do putStrLn "SIDE POT WINNERS:"
-        -- putStrLn winString
-        return state {nonBustPlayers = winnersPayed,
-                      currentPot = potLeft  - (winning*length ws)}
+        outputPotWinners playersIn winners winning isMainPot
 
-        -- let player = players !! fst w
-        --     winning = potLeft `div` length (w:ws)
-        --     updatedPlayer = player {chips = chips player + winning}
-        -- putStr $ name player ++ " WINS " ++ show winning
-        -- if length ps > 1 then do
-        --   putStrLn $ " CHIPS WITH A HAND OF " ++ show (snd w)
-        -- else do
-        --   putStrLn " CHIPS AS ALL OTHER PLAYERS FOLDED"
-        -- state <- return state {nonBustPlayers =
-        --                                      swap players updatedPlayer (fst w)}
-        -- payWinners state ps ws (potLeft - winning) False
+        return state {nonBustPlayers = winnersPayed,
+                      currentPot = potLeft  - (winning*length winners)}
+
       else do
         --when there's all in winners, pay out the smallest all in bet like above
         --then you need to calculate the winner again with this all in better
-        -- putStrLn $ "LOOKING AT ALL IN BET: " ++ show (allInBets state)
+    
         let allInBet = head allInWins
-        state <- payoutSidePot state allInBet ps ws potLeft isMainPot
+            allIns = allInBets state
+            allInWinners =  sortBy (\(_, a) (_, b) -> compare b a)
+                                   [(p, allIns!!p)| (p, _) <- winners, allIns!!p > 0]
+     
+        state <- payoutSidePot state allInBet playersIn winners potLeft isMainPot
 
-        let otherPlayersToConsider =  filter 
-                                        (\x -> playerIndex x /= fst allInBet) ps
-            otherPlayersIdx = determineWinner state{
-                playersInRound = [playerIndex i| i <- otherPlayersToConsider ]}
+        let otherPlayersToConsider =  filter
+              (\x -> fst x /= fst allInBet && snd x > 0 && fst x `elem` 
+              map playerIndex playersIn) (gamewiseBets state)
+            otherPlayersIdx = map fst otherPlayersToConsider
+            totalPlayersConsidered = [players!!i | i <- otherPlayersIdx]
 
-        payWinners 
-          state otherPlayersToConsider otherPlayersIdx (currentPot state) False
-        -- let allInWinnerIndicies = [i | (i, _) <- allInWins]
-        --     playersWithoutAllInsIdx = filter (`notElem` allInWinnerIndicies) (playersInRound state)
-        --     playersWithoutAllIns = [p | p <- nonBustPlayers state, playerIndex p `elem` playersWithoutAllInsIdx]
-        -- if length playersWithoutAllIns > 0 then
-        --   payWinners state playersWithoutAllIns (determineWinner state{playersInRound = playersWithoutAllInsIdx}) (currentPot state) False
-        -- else 
-        --   return state
+        payWinners
+          state totalPlayersConsidered (determineWinner state{playersInRound = otherPlayersIdx}) (currentPot state) False
+
       where
         players = nonBustPlayers state
 
 
     outputPotWinners :: [Player] -> [(PlayerIndex, PokerHand)] -> Int -> Bool
                                                                          -> IO()
-    outputPotWinners ps ws winning isMainPot = do
-      -- putStrLn $ "WINNERS: " ++ show ws
-      -- putStrLn $ "FROM PLAYERS " ++ show ps
-      let winString = if length ps > 1 then
-              unwords [name (head (filter (\p -> playerIndex p == fst w) ps)) ++
+    outputPotWinners playersIn winners winning isMainPot = do
+      let winString = if length playersIn > 1 then
+              unwords [name (head (filter (\p -> playerIndex p == fst w) playersIn)) ++
                         " WINS " ++ show winning ++ " CHIPS WITH A HAND OF " ++
-                        show (snd w) ++ "\n"| w <- ws]
+                        show (snd w) ++ "\n"| w <- winners]
                     else
-                      name (head ps) ++ " WINS " ++ show winning ++
+                      name (head playersIn) ++ " WINS " ++ show winning ++
                         " CHIPS AS ALL OTHER PLAYERS FOLDED"
       if isMainPot then do putStrLn "MAIN POT WINNERS:"
       else do putStrLn "SIDE POT WINNERS:"
       putStrLn winString
-        --     winning = snd allInBet*length ps `div` length (w:ws)
-        --     pIndex = fst allInBet
-        --     player = players !! pIndex
-        --     updatedPlayer = player {chips = chips player + winning}
-        --     hand = head (filter (\(a,_) -> a == pIndex) (w:ws))
-        -- putStr $ name player ++ " WINS " ++ show winning
-        -- putStrLn $ " CHIPS FROM MAIN/SIDEPOT WITH A HAND OF " ++ show (snd hand)
-        -- state <- return state {
-        --   nonBustPlayers = swap players updatedPlayer pIndex,
-        --   allInBets = map
-        --                 (\x -> if x >= snd allInBet then x-snd allInBet else x)
-        --                 (allInBets state)}
-        -- if non (null ws) then 
-        --   payWinners state ps ws (potLeft - winning)
-        -- else 
-        --   payWinners state ps (determineWinner )
-        -- payWinners state ps (delete (pIndex, snd hand) (w:ws)) (potLeft - winning)
 
 
     payoutSidePot ::  GameState -> Bet -> [Player] -> [(PlayerIndex, PokerHand)]
                                                -> Int -> Bool -> IO GameState
     payoutSidePot state allInBet ps ws potLeft isMainPot = do
       --looks at the chip contributions to this all in pot 
-      -- putStrLn $ "DEALER INDEX " ++ show (currentDealerIndex state)
-      -- putStrLn $ "ALL INS " ++(show (allInBets state))
       let allInTotalWinning = sum
                       [min (snd x) (snd allInBet) | x <- gamewiseBets state]
 
@@ -560,57 +515,17 @@ module HoldEm where
               x {chips = chips x + winning}
             else x)
             players
+      
       outputPotWinners ps ws winning isMainPot
       return state {currentPot = currentPot state - allInTotalWinning,
                     nonBustPlayers = winnersPayed,
-                    allInBets = updatedAllIns}
+                    allInBets = updatedAllIns,
+                    gamewiseBets = updatedGamewiseBets}
       where
         dealerIdx = currentDealerIndex state
         players = nonBustPlayers state
         allIns = allInBets state
-        --in case for all in on blind
-        -- smallBlindVal = if allIns !! ((dealerIdx + 1) `mod` length allIns) < 0
-        --   then abs (allIns !!  ((dealerIdx + 1) `mod` length allIns))
-        --   else smallBlind state
-        -- bigBlindVal = if allIns !! ((dealerIdx + 2) `mod` length allIns) < 0
-        --   then abs (allIns !!  ((dealerIdx + 2) `mod` length allIns))
-        --   else bigBlind state
 
-    -- payWinners2 :: GameState -> [Player] -> [(PlayerIndex, PokerHand)] -> Int
-    --                                                              -> IO GameState
-    -- payWinners2 state ps [] potLeft = return state {currentPot = potLeft}
-    -- payWinners2 state ps (w:ws) potLeft = do
-    --   let allInWins = getAllInWinners ws state
-    --   if null allInWins then do
-    --     let player = players !! fst w
-    --         winning = currentPot state `div` length (w:ws)
-    --         updatedPlayer = player {chips = chips player + winning}
-    --     putStr $ name player ++ " WINS " ++ show winning
-    --     if length ps > 1 then do
-    --       putStrLn $ " CHIPS WITH A HAND OF " ++ show (snd w)
-    --     else do
-    --       putStrLn " CHIPS AS ALL OTHER PLAYERS FOLDED"
-    --     state <- return state {nonBustPlayers =
-    --                                          swap players updatedPlayer (fst w)}
-    --     payWinners2 state ps ws (potLeft - winning)
-    --   else do
-    --     let allInBet = head allInWins
-    --         winning = snd allInBet*length ps `div` length (w:ws)
-    --         pIndex = fst allInBet
-    --         player = players !! pIndex
-    --         updatedPlayer = player {chips = chips player + winning}
-    --     let hand = head (filter (\(a,_) -> a == pIndex) (w:ws))
-    --     putStr $ name player ++ " WINS " ++ show winning
-    --     putStr $ " CHIPS FROM SIDEPOT WITH A HAND OF " ++ show (snd hand)
-    --     state <- return state {
-    --       nonBustPlayers = swap players updatedPlayer pIndex,
-    --       allInBets = map
-    --                     (\x -> if x >= snd allInBet then x-snd allInBet else x)
-    --                     (allInBets state)}
-
-    --     payWinners2 state ps (delete (pIndex, snd hand) (w:ws)) (potLeft - winning)
-    --   where
-    --     players = nonBustPlayers state
 
     payout :: GameState -> IO GameState
     payout state = do
@@ -810,11 +725,7 @@ module HoldEm where
 
     betSmart :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
     betSmart pl state currBet betToCall = do
-      -- print $ length (filter (`notElem` hand pl) generateDeck)
       estimatedWin <- estimateWinChance pl state plHand
-      -- putStrLn "estimatedWin"
-      -- print estimatedWin
-      -- print plHand
       getSmartBet state pl estimatedWin currBet betToCall
       where
         plHand = evaluateHand (hand pl)
@@ -830,20 +741,6 @@ module HoldEm where
             4 -> 2
             5 -> 1
 
-    -- makeOver75BetDecision :: Player -> Int -> Double -> Int -> Int -> Maybe Bet
-    -- makeOver75BetDecision pl roundsLeft estimatedWin currBet betToCall = do
-    -- -- aim to bet 30-60% of your starting chips by the end of 4 betting rounds
-    --   let goalBetPercentage = 0.3*(estimatedWin - 0.75) / 0.25 + 0.3
-    --       percentageToBetThisRound = 
-    --           (goalBetPercentage - fromIntegral(currBet/totalChipsBeforeRound))
-    --             / fromIntegral roundsLeft
-    --   if percentageToBetThisRound <= 0 then --call
-    --     Just (playerIndex pl, betToCall - currBet)
-    --   else --raise
-    --     Just (playerIndex pl, 
-    --     ceiling (percentageToBetThisRound * fromIntegral totalChipsBeforeRound))
-    --   where
-    --     totalChipsBeforeRound = currBet + chips pl
 
     data SmartBetParams = SmartBetParams {
       bottomEstWinRange :: Double,
@@ -871,7 +768,6 @@ module HoldEm where
     decideSmartBet :: Player -> Int -> Double -> SmartBetParams -> Int -> Int
                                                                -> IO (Maybe Bet)
     decideSmartBet pl roundsLeft estimatedWin params currBet betToCall = do
-      -- putStrLn $ "CURRENT BET IS " ++ show currBet
       -- aim to bet goalBet% of your starting chips by the end of the 4 rounds
       let goalBetPercentage = betRangeSize*(estimatedWin - bottomRange) / 0.25 +
                                                                    lowerBoundBet
@@ -882,8 +778,6 @@ module HoldEm where
                                                        / fromIntegral roundsLeft
           betIWant = ceiling (percentageToBetThisRound * totalChipsBeforeRound)
 
-      -- putStrLn $ show goalBetPercentage ++ " IS THE GOAL BET PERCENTAGE"
-      -- putStrLn $ show percentageToBetThisRound ++ " IS HOW MUCH WE WANNA BET THIS ROUND"
       --if we don't need to bet more this round to meet target bet %
       if percentageToBetThisRound <= 0 || currBet + betIWant <= betToCall then
         if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold then
@@ -901,12 +795,7 @@ module HoldEm where
         -- if currBet + betIWant > betToCall then do --raise
         outputRaise pl (betIWant-betToMeetCall) betToMeetCall
         return $ Just (playerIndex pl, betIWant)
-        -- else do --call
-        --     if plChips > betToMeetCall then do
-        --       call <- callOrCheck pl betToMeetCall
-        --       return $ Just call
-        --     else
-        --       return $ Just (playerIndex pl, plChips)
+      
       where
         betToMeetCall = betToCall - currBet
         totalChipsBeforeRound = fromIntegral (currBet + chips pl)
@@ -919,9 +808,7 @@ module HoldEm where
     -- total the amount of hands that beat players current hand
     estimateWinChance :: Player -> GameState -> PokerHand -> IO Double
     estimateWinChance pl state plHand = do
-      --assumes independence for simplicity
       return $ ((totalHands - loseHands) / totalHands)
-      -- **numOpponents
       where
         numOpponents = fromIntegral (length (playersInRound state) - 1)
         comCards = communityCards state
