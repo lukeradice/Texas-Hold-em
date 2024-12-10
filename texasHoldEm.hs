@@ -156,20 +156,12 @@ module HoldEm where
     evaluateHand :: [Card] -> PokerHand
     evaluateHand xs
       | length xs == 2 = evaluateHoleHand xs kindsSorted --straight/pair on hole
-      | length longestStraight >= 5 && --straight and royal flush --straight and royal flush --straight and royal flush --straight and royal flush
-         --straight and royal flush
-         --straight and royal flush
-         --straight and royal flush --straight and royal flush
-         --straight and royal flush
+      | length longestStraight >= 5 && --straight and royal flush 
         longestStraight == highestFlush =
           returnStraightFlush xs longestStraight
       | length highestKind == 4 = --four of a kind
           returnKindHand highestKind kindsGroupedWithoutHighest
-      | length highestKind == 3 && --full house --full house --full house --full house
-         --full house
-         --full house
-         --full house --full house
-         --full house
+      | length highestKind == 3 && --full house 
         length sndHighestKind >= 2 =
           returnFullHouse highestKind sndHighestKind
       | length highestFlush >= 5 = returnFlush highestFlush --flush
@@ -500,7 +492,8 @@ module HoldEm where
             allInWinners =  sortBy (\(_, a) (_, b) -> compare b a)
                               [(p, allIns!!p)| (p, _) <- winners, allIns!!p > 0]
 
-        state <- payoutSidePot state allInBet playersIn winners potLeft isMainPot
+        state 
+            <- payoutSidePot state allInBet playersIn winners potLeft isMainPot
 
         let otherPlayersToConsider =  filter
               (\x -> fst x /= fst allInBet && snd x > 0 && fst x `elem`
@@ -509,8 +502,10 @@ module HoldEm where
             totalPlayersConsidered = [players!!i | i <- otherPlayersIdx]
 
         --after calculating main pot (or multiple all in pots), payout the rest
-        payWinners
-          state totalPlayersConsidered (determineWinner state{playersInRound = otherPlayersIdx}) (currentPot state) False
+        let otherWinners = 
+                         determineWinner state{playersInRound = otherPlayersIdx}
+        payWinners 
+          state totalPlayersConsidered otherWinners (currentPot state) False
 
       where
         players = nonBustPlayers state
@@ -542,9 +537,11 @@ module HoldEm where
                       [min (snd x) (snd allInBet) | x <- gamewiseBets state]
           -- | update gamewise bet and all in information to inform the
           -- | calculations of the other pots
-          updatedGamewiseBets =
-                   map (\x -> if snd x >= snd allInBet then (fst x, snd x - snd allInBet) else (fst x, 0))
-                   (gamewiseBets state)
+          updatedGamewiseBets = map (\x -> 
+                                        if snd x >= snd allInBet then 
+                                          (fst x, snd x - snd allInBet) 
+                                        else (fst x, 0))
+                                        (gamewiseBets state)
           updatedAllIns = map (\x -> if x >= snd allInBet then x - snd allInBet
                                      else x)
                           (allInBets state)
@@ -872,7 +869,8 @@ module HoldEm where
 
       --if we don't need to bet more this round to meet target bet %
       if percentageToBetThisRound <= 0 || currBet + betIWant <= betToCall then
-        if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold then
+        if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold 
+        then
           fold pl
         else do --call
           if plChips > betToMeetCall then do
@@ -883,7 +881,8 @@ module HoldEm where
       --if we need to put a bet forward to meet target %, will have to call or
       --raise
       else do --raise
-        putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++ show plChips
+        putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++ 
+                    show plChips
         -- if currBet + betIWant > betToCall then do --raise
         outputRaise pl (betIWant-betToMeetCall) betToMeetCall
         return $ Just (playerIndex pl, betIWant)
@@ -924,7 +923,8 @@ module HoldEm where
     betHuman :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
     betHuman pl state currBet betToCall = do
       putStrLn $ "\nYOUR CHIPS: " ++ show (chips pl)
-      putStrLn $ "BET TO CALL: " ++ show (snd (getBetToCall (roundwiseBets state)))
+      putStrLn $ "BET TO CALL: " ++ 
+                  show (snd (getBetToCall (roundwiseBets state)))
       putStrLn $ "YOUR CURRENT BET: " ++ show currBet
       putStrLn $ "YOUR HAND: " ++ show (take 2 (hand pl))
       putStrLn $ "COMMUNITY CARDS: " ++ show (communityCards state)
