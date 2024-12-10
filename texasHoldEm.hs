@@ -156,12 +156,20 @@ module HoldEm where
     evaluateHand :: [Card] -> PokerHand
     evaluateHand xs
       | length xs == 2 = evaluateHoleHand xs kindsSorted --straight/pair on hole
-      | length longestStraight >= 5 && --straight and royal flush
+      | length longestStraight >= 5 && --straight and royal flush --straight and royal flush --straight and royal flush --straight and royal flush
+         --straight and royal flush
+         --straight and royal flush
+         --straight and royal flush --straight and royal flush
+         --straight and royal flush
         longestStraight == highestFlush =
           returnStraightFlush xs longestStraight
       | length highestKind == 4 = --four of a kind
           returnKindHand highestKind kindsGroupedWithoutHighest
-      | length highestKind == 3 && --full house
+      | length highestKind == 3 && --full house --full house --full house --full house
+         --full house
+         --full house
+         --full house --full house
+         --full house
         length sndHighestKind >= 2 =
           returnFullHouse highestKind sndHighestKind
       | length highestFlush >= 5 = returnFlush highestFlush --flush
@@ -276,9 +284,9 @@ module HoldEm where
     determineWinner :: GameState -> [(PlayerIndex, PokerHand)]
     determineWinner state = winner : filter --get hands equal to winner
                               (\(_,a) -> compareHand a (snd winner) == EQ)
-                              (tail winnersRanked) 
+                              (tail winnersRanked)
       where
-        players = filter (\x -> playerIndex x `elem` playersInRound state) 
+        players = filter (\x -> playerIndex x `elem` playersInRound state)
                          (nonBustPlayers state) --get players still in
         --get players with their hand in list
         hands = [(playerIndex x, evaluateHand (hand x)) | x <- players]
@@ -338,7 +346,7 @@ module HoldEm where
       state <- initiateBets state Community
       state <- initiateBets state Community
       putStrLn ""
-      state <- payout state 
+      state <- payout state
       removeBustPlayers state [0..length players-1]
       where
         players = nonBustPlayers state
@@ -359,7 +367,7 @@ module HoldEm where
         let players = delete player nonBustPl
         let pIndex = playerIndex player
         --update non bust players list player indexes
-        state <- return state { nonBustPlayers = map 
+        state <- return state { nonBustPlayers = map
           (\x -> if playerIndex x > pIndex then
                     x {playerIndex = playerIndex x - 1}
                  else x) players }
@@ -424,7 +432,7 @@ module HoldEm where
         putStr $ name player ++ " HAS BET " ++ show blind
         putStrLn $ " ON THE" ++ blindStr ++ " BLIND"
         --updates chip, bet and pot values
-        let newState = state { nonBustPlayers = 
+        let newState = state { nonBustPlayers =
             swap players updatedPlayer blindIndex,
             currentPot = currentPot state + blind,
             roundwiseBets = map
@@ -471,7 +479,7 @@ module HoldEm where
     payWinners state playersIn winners potLeft isMainPot = do
       let allInWins = getMinAllInWinners winners state
       --if no all in winners can distribute current pot among all players left
-      if null allInWins then do 
+      if null allInWins then do
         let winning = potLeft `div` length winners
             winningPlayerIndicies = map fst winners
             winnersPayed = map (\x ->
@@ -491,17 +499,17 @@ module HoldEm where
             allIns = allInBets state
             allInWinners =  sortBy (\(_, a) (_, b) -> compare b a)
                               [(p, allIns!!p)| (p, _) <- winners, allIns!!p > 0]
-     
+
         state <- payoutSidePot state allInBet playersIn winners potLeft isMainPot
 
         let otherPlayersToConsider =  filter
-              (\x -> fst x /= fst allInBet && snd x > 0 && fst x `elem` 
+              (\x -> fst x /= fst allInBet && snd x > 0 && fst x `elem`
               map playerIndex playersIn) (gamewiseBets state)
             otherPlayersIdx = map fst otherPlayersToConsider
             totalPlayersConsidered = [players!!i | i <- otherPlayersIdx]
 
         --after calculating main pot (or multiple all in pots), payout the rest
-        payWinners 
+        payWinners
           state totalPlayersConsidered (determineWinner state{playersInRound = otherPlayersIdx}) (currentPot state) False
 
       where
@@ -512,7 +520,7 @@ module HoldEm where
                                                                          -> IO()
     outputPotWinners playersIn winners winning isMainPot = do
       let winString = if length playersIn > 1 then
-              unwords [name (head 
+              unwords [name (head
               --this gets player name from his index stored in first tuple of w
                            (filter (\p -> playerIndex p == fst w) playersIn)) ++
                         " WINS " ++ show winning ++ " CHIPS WITH A HAND OF " ++
@@ -547,7 +555,7 @@ module HoldEm where
               x {chips = chips x + winning}
             else x)
             players
-      
+
       outputPotWinners ps ws winning isMainPot
       return state {currentPot = currentPot state - allInTotalWinning,
                     nonBustPlayers = winnersPayed,
@@ -589,7 +597,8 @@ module HoldEm where
     doPlayerBets state (p:ps) = do
       if length (playersInRound state) /= 1 then do --checks for round winner
         if not (skipBecauseOfAllIn state p) then do --checks if player all in
-          -- when () threadDelay (1 * 200000) -- so human player has time to read
+          when (checkForHumanPlayers (nonBustPlayers state)) $ do
+             threadDelay (1 * 2000000) -- so human player has time to read
           playerBet <- bet p state (roundwiseBets state) -- do bet
           state <- return state {lastBetterIndex = playerIndex p}
           if playerBet == Nothing then do -- a fold
@@ -598,12 +607,12 @@ module HoldEm where
             doPlayerBets state ps
           else do
             let theBet = fromMaybe (playerIndex p, 0) playerBet
-                updatedRoundwiseBets = 
+                updatedRoundwiseBets =
                                 updateRoundBetValue (roundwiseBets state) theBet
                 outdatedNonBustPlayers = nonBustPlayers state
             --update chip and bets values for players in game state
-            state <- return state { 
-              nonBustPlayers =      
+            state <- return state {
+              nonBustPlayers =
                 updatePlayersChips theBet outdatedNonBustPlayers,
                 roundwiseBets = updatedRoundwiseBets,
                 currentPot = currentPot state + snd theBet }
@@ -621,6 +630,10 @@ module HoldEm where
     -- | checks if player has gone all in in the current round
     wentAllIn :: GameState -> Player -> Bool
     wentAllIn state p = (allInBets state !! playerIndex p) > 0
+
+    -- | check if a human player is in the game
+    checkForHumanPlayers :: [Player] -> Bool
+    checkForHumanPlayers = foldr (\ p -> (||) (strategy p == HumanPlayer)) False
 
     -- | checks if you're all in or the rest of the players you're betting with
     -- | are all in
@@ -874,7 +887,7 @@ module HoldEm where
         -- if currBet + betIWant > betToCall then do --raise
         outputRaise pl (betIWant-betToMeetCall) betToMeetCall
         return $ Just (playerIndex pl, betIWant)
-      
+
       where
         betToMeetCall = betToCall - currBet
         totalChipsBeforeRound = fromIntegral (currBet + chips pl)
@@ -888,7 +901,7 @@ module HoldEm where
     estimateWinChance :: Player -> GameState -> PokerHand -> IO Double
     estimateWinChance pl state plHand = do
       -- return hand percentile
-      return $ ((totalHands - loseHands) / totalHands) 
+      return $ ((totalHands - loseHands) / totalHands)
       where
         comCards = communityCards state
         -- get combinations of two card hands opponent could have
@@ -897,7 +910,7 @@ module HoldEm where
         totalHands = fromIntegral (length combinationsOfTwo)
         --count how many of those card hands can form a superior poker hand
         loseHands = fromIntegral (length (filter
-           (\x -> compareHand (evaluateHand (x ++ comCards)) plHand == GT) 
+           (\x -> compareHand (evaluateHand (x ++ comCards)) plHand == GT)
            combinationsOfTwo))
 
     -- | get all the possible two card hands an opponent can have from the given
@@ -945,7 +958,7 @@ module HoldEm where
               " CHIPS" ++ " TO RAISE BY " ++ show raiseAmount
             return $ Just bet
           else --irregular inputs or raises will have to input again 
-            getHumanAction pl currBet betToCall 
+            getHumanAction pl currBet betToCall
 
     -- | outputs a given error to the console and returns false
     inpError :: String -> IO Bool
