@@ -156,12 +156,38 @@ module HoldEm where
     evaluateHand :: [Card] -> PokerHand
     evaluateHand xs
       | length xs == 2 = evaluateHoleHand xs kindsSorted --straight/pair on hole
-      | length longestStraight >= 5 && --straight and royal flush 
+      | length longestStraight >= 5 && --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush  --straight and royal flush 
+         --straight and royal flush  --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush 
+         --straight and royal flush  --straight and royal flush 
+         --straight and royal flush 
         longestStraight == highestFlush =
           returnStraightFlush xs longestStraight
       | length highestKind == 4 = --four of a kind
           returnKindHand highestKind kindsGroupedWithoutHighest
-      | length highestKind == 3 && --full house 
+      | length highestKind == 3 && --full house  --full house  --full house  --full house  --full house  --full house  --full house  --full house 
+         --full house 
+         --full house 
+         --full house 
+         --full house 
+         --full house  --full house 
+         --full house  --full house 
+         --full house 
+         --full house 
+         --full house  --full house  --full house  --full house 
+         --full house 
+         --full house 
+         --full house  --full house 
+         --full house 
         length sndHighestKind >= 2 =
           returnFullHouse highestKind sndHighestKind
       | length highestFlush >= 5 = returnFlush highestFlush --flush
@@ -377,7 +403,7 @@ module HoldEm where
         state <- dealCards deal state
         --checking if we should skip to showdown because of all in bets
         if length allIns < playersIn - 1 then do
-          state <- bettingRound state 
+          state <- bettingRound state
           putStrLn $ "\nCURRENT POT IS " ++ show (currentPot state)
           return state
         else do --despite skipping, inform community card dealing to showdown
@@ -493,7 +519,7 @@ module HoldEm where
             allInWinners =  sortBy (\(_, a) (_, b) -> compare b a)
                               [(p, allIns!!p)| (p, _) <- winners, allIns!!p > 0]
 
-        state 
+        state
             <- payoutSidePot state allInBet playersIn winners potLeft isMainPot
 
         let otherPlayersToConsider =  filter
@@ -503,9 +529,9 @@ module HoldEm where
             totalPlayersConsidered = [players!!i | i <- otherPlayersIdx]
 
         --after calculating main pot (or multiple all in pots), payout the rest
-        let otherWinners = 
+        let otherWinners =
                          determineWinner state{playersInRound = otherPlayersIdx}
-        payWinners 
+        payWinners
           state totalPlayersConsidered otherWinners (currentPot state) False
 
       where
@@ -524,9 +550,17 @@ module HoldEm where
                     else
                       name (head playersIn) ++ " WINS " ++ show winning ++
                         " CHIPS AS ALL OTHER PLAYERS FOLDED"
+          losers = [p | p <- playersIn, playerIndex p `notElem` map fst winners]
+
       if isMainPot then do putStrLn "MAIN POT WINNERS:"
       else do putStrLn "SIDE POT WINNERS:"
       putStrLn winString
+      unless (null losers) $ do
+        let loseString = "AGAINST: " ++ unwords [name l ++ " WITH A HAND OF " ++
+                                      show (evaluateHand (hand l)) ++ "\n"
+                                      | l <- losers]
+        putStrLn loseString
+
 
     -- | for a sidepot/mainpot calculation because of an all in, evaluates 
     -- | total amount in the pot and pays out
@@ -538,9 +572,9 @@ module HoldEm where
                       [min (snd x) (snd allInBet) | x <- gamewiseBets state]
           -- | update gamewise bet and all in information to inform the
           -- | calculations of the other pots
-          updatedGamewiseBets = map (\x -> 
-                                        if snd x >= snd allInBet then 
-                                          (fst x, snd x - snd allInBet) 
+          updatedGamewiseBets = map (\x ->
+                                        if snd x >= snd allInBet then
+                                          (fst x, snd x - snd allInBet)
                                         else (fst x, 0))
                                         (gamewiseBets state)
           updatedAllIns = map (\x -> if x >= snd allInBet then x - snd allInBet
@@ -818,14 +852,11 @@ module HoldEm where
     -- | bet and return it
     betSmart :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
     betSmart pl state currBet betToCall = do
-      estimatedWin <- estimateWinChance pl state plHand
-      putStrLn $ "SMART PLAYER CHIPS " ++ show (chips pl)
-      putStrLn $ show (evaluateHand (hand pl))
-      putStrLn $ "ESTIMATED WIN CHANCE " ++ show estimatedWin
-      let params = getSmartBetParams estimatedWin betRoundsLeft
+      estimatedWin <- estimateWinChance pl state plEvaluatedHand
+      let params = getSmartBetParams estimatedWin
       decideSmartBet pl betRoundsLeft estimatedWin params currBet betToCall
       where
-        plHand = evaluateHand (hand pl)
+        plEvaluatedHand = evaluateHand (hand pl)
         betRoundsLeft = case length (communityCards state) of
           0 -> 4
           3 -> 3
@@ -834,9 +865,9 @@ module HoldEm where
 
     -- | return the parameters of smart bet behaviour based on the estimated
     -- | win chance
-    getSmartBetParams :: Double -> Int -> SmartBetParams
-    getSmartBetParams estimatedWin roundsLeft
-           | estimatedWin >= 0.75 = SmartBetParams {
+    getSmartBetParams :: Double -> SmartBetParams
+    getSmartBetParams estimatedWin
+      | estimatedWin >= 0.75 = SmartBetParams {
           bottomEstWinRange=0.75, lowerBoundBetPercentage=0.4,
           betPercentageRangeSize=0.3, betPercentageFoldThreshold=1}
       | estimatedWin >= 0.5 = SmartBetParams {
@@ -867,7 +898,7 @@ module HoldEm where
 
       --if we don't need to bet more this round to meet target bet %
       if percentageToBetThisRound <= 0 || currBet + betIWant <= betToCall then
-        if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold 
+        if min 1 (fromIntegral betToCall/totalChipsBeforeRound) > foldThreshold
         then
           fold pl
         else do --call
@@ -879,7 +910,7 @@ module HoldEm where
       --if we need to put a bet forward to meet target %, will have to call or
       --raise
       else do --raise
-        putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++ 
+        putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++
                     show plChips
         outputRaise pl (betIWant-betToMeetCall) betToMeetCall
         return $ Just (playerIndex pl, betIWant)
@@ -895,7 +926,7 @@ module HoldEm where
 
     -- | total the amount of possible hands that beat players current hand
     estimateWinChance :: Player -> GameState -> PokerHand -> IO Double
-    estimateWinChance pl state plHand = do
+    estimateWinChance pl state plEvaluatedHand = do
       -- return hand percentile
       return $ ((totalHands - loseHands) / totalHands)
       where
@@ -906,8 +937,9 @@ module HoldEm where
         totalHands = fromIntegral (length combinationsOfTwo)
         --count how many of those card hands can form a superior poker hand
         loseHands = fromIntegral (length (filter
-           (\x -> compareHand (evaluateHand (x ++ comCards)) plHand == GT)
-           combinationsOfTwo))
+           (\x ->
+            compareHand (evaluateHand (x ++ comCards)) plEvaluatedHand == GT)
+                          combinationsOfTwo))
 
     -- | get all the possible two card hands an opponent can have from the given
     -- | cards
@@ -920,7 +952,7 @@ module HoldEm where
     betHuman :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
     betHuman pl state currBet betToCall = do
       putStrLn $ "\nYOUR CHIPS: " ++ show (chips pl)
-      putStrLn $ "BET TO CALL: " ++ 
+      putStrLn $ "BET TO CALL: " ++
                   show (snd (getBetToCall (roundwiseBets state)))
       putStrLn $ "YOUR CURRENT BET: " ++ show currBet
       putStrLn $ "YOUR HAND: " ++ show (take 2 (hand pl))
