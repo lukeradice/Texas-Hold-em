@@ -836,18 +836,15 @@ module HoldEm where
     -- | win chance
     getSmartBetParams :: Double -> Int -> SmartBetParams
     getSmartBetParams estimatedWin roundsLeft
-      | estimatedWin >= 0.75 && roundsLeft <= 3 = SmartBetParams {
+           | estimatedWin >= 0.75 = SmartBetParams {
           bottomEstWinRange=0.75, lowerBoundBetPercentage=0.4,
-          betPercentageRangeSize=0.5, betPercentageFoldThreshold=1}
-      | estimatedWin >= 0.5 && roundsLeft <= 3 = SmartBetParams {
-            bottomEstWinRange=0.5, lowerBoundBetPercentage=0.3,
-            betPercentageRangeSize=0.2, betPercentageFoldThreshold=0.1}
+          betPercentageRangeSize=0.3, betPercentageFoldThreshold=1}
       | estimatedWin >= 0.5 = SmartBetParams {
             bottomEstWinRange=0.5, lowerBoundBetPercentage=0.2,
-            betPercentageRangeSize=0.2, betPercentageFoldThreshold=0.4}
+            betPercentageRangeSize=0.2, betPercentageFoldThreshold=0.45}
       | estimatedWin >= 0.25 = SmartBetParams {
             bottomEstWinRange=0.25, lowerBoundBetPercentage=0.1,
-            betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.25}
+            betPercentageRangeSize=0.05, betPercentageFoldThreshold=0.2}
       | otherwise = SmartBetParams {
             bottomEstWinRange=0, lowerBoundBetPercentage=0,
             betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.15}
@@ -1031,5 +1028,5 @@ module HoldEm where
 
 
 --11/12/24 smart player trial
---M: 3
---O: 15
+--M: 10
+--O: 18
