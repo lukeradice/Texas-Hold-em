@@ -295,7 +295,7 @@ module HoldEm where
     -- | plays hands/games until all but 1 player or bust or 100 rounds played
     gameLoop :: GameState -> Int -> IO ()
     gameLoop state count = do
-      state <- playRound state
+      state <- playHand state
       let players = nonBustPlayers state
       if length players == 1 then do --one player remaining
         putStrLn $ concat (replicate 100 "*")
@@ -318,8 +318,8 @@ module HoldEm where
           gameLoop state {currentDealerIndex = newDealer} (count+1)
 
     -- | plays out the sequence of betting rounds for one hand and payout
-    playRound :: GameState -> IO GameState
-    playRound state = do
+    playHand :: GameState -> IO GameState
+    playHand state = do
       putStrLn "\nSTARTING NEW ROUND\n"
       --reshuffle deck, clear hands and community cards, set bets to 0 and 
       --add back in all the non bust players
@@ -377,7 +377,7 @@ module HoldEm where
         state <- dealCards deal state
         --checking if we should skip to showdown because of all in bets
         if length allIns < playersIn - 1 then do
-          state <- bettingRound state deal
+          state <- bettingRound state 
           putStrLn $ "\nCURRENT POT IS " ++ show (currentPot state)
           return state
         else do --despite skipping, inform community card dealing to showdown
@@ -389,8 +389,8 @@ module HoldEm where
 
     -- | gets players in right order for betting round, announces round and com
     -- | cards before player bets and clears roundwise betting data after
-    bettingRound :: GameState -> Deal -> IO GameState
-    bettingRound state deal = do
+    bettingRound :: GameState -> IO GameState
+    bettingRound state = do
       let comCards = communityCards state
           dealerIndex = currentDealerIndex state
           playersInBetOrder = drop (dealerIndex+1) players ++
@@ -454,6 +454,7 @@ module HoldEm where
         player = players !! blindIndex
         updatedPlayer = player {chips = chips player - blind}
 
+    -- | gets the list of winners who had the joint lowest total all in bet
     getMinAllInWinners :: [(PlayerIndex, PokerHand)] -> GameState ->
                                                             [(PlayerIndex, Int)]
     getMinAllInWinners ps state = filter (\x -> snd x == minAllIn) allInWinners
@@ -563,7 +564,7 @@ module HoldEm where
         players = nonBustPlayers state
         allIns = allInBets state
 
-    -- | intiitates payout for winners of a hand
+    -- | intitiates payout for winners of a hand
     payout :: GameState -> IO GameState
     payout state = do
        payWinners state players winners pot True --true is to say its main pot
@@ -818,35 +819,35 @@ module HoldEm where
     betSmart :: Player -> GameState -> Int -> Int -> IO (Maybe Bet)
     betSmart pl state currBet betToCall = do
       estimatedWin <- estimateWinChance pl state plHand
-      getSmartBet state pl estimatedWin currBet betToCall
+      putStrLn $ "SMART PLAYER CHIPS " ++ show (chips pl)
+      putStrLn $ show (evaluateHand (hand pl))
+      putStrLn $ "ESTIMATED WIN CHANCE " ++ show estimatedWin
+      let params = getSmartBetParams estimatedWin betRoundsLeft
+      decideSmartBet pl betRoundsLeft estimatedWin params currBet betToCall
       where
         plHand = evaluateHand (hand pl)
-
-    -- | determine how many rounds left in hand and initates smart bet action
-    getSmartBet :: GameState -> Player -> Double -> Int -> Int -> IO (Maybe Bet)
-    getSmartBet state pl estimatedWin currBet betToCall =
-           decideSmartBet pl betRoundsLeft estimatedWin params currBet betToCall
-        where
-          params = getSmartBetParams estimatedWin
-          betRoundsLeft = case length (communityCards state) of
-            0 -> 4
-            3 -> 3
-            4 -> 2
-            5 -> 1
+        betRoundsLeft = case length (communityCards state) of
+          0 -> 4
+          3 -> 3
+          4 -> 2
+          5 -> 1
 
     -- | return the parameters of smart bet behaviour based on the estimated
     -- | win chance
-    getSmartBetParams :: Double -> SmartBetParams
-    getSmartBetParams estimatedWin
-      | estimatedWin >= 0.75 = SmartBetParams {
+    getSmartBetParams :: Double -> Int -> SmartBetParams
+    getSmartBetParams estimatedWin roundsLeft
+      | estimatedWin >= 0.75 && roundsLeft <= 3 = SmartBetParams {
           bottomEstWinRange=0.75, lowerBoundBetPercentage=0.4,
-          betPercentageRangeSize=0.3, betPercentageFoldThreshold=1}
+          betPercentageRangeSize=0.5, betPercentageFoldThreshold=1}
+      | estimatedWin >= 0.5 && roundsLeft <= 3 = SmartBetParams {
+            bottomEstWinRange=0.5, lowerBoundBetPercentage=0.3,
+            betPercentageRangeSize=0.2, betPercentageFoldThreshold=0.1}
       | estimatedWin >= 0.5 = SmartBetParams {
             bottomEstWinRange=0.5, lowerBoundBetPercentage=0.2,
-            betPercentageRangeSize=0.2, betPercentageFoldThreshold=0.45}
+            betPercentageRangeSize=0.2, betPercentageFoldThreshold=0.4}
       | estimatedWin >= 0.25 = SmartBetParams {
             bottomEstWinRange=0.25, lowerBoundBetPercentage=0.1,
-            betPercentageRangeSize=0.05, betPercentageFoldThreshold=0.2}
+            betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.25}
       | otherwise = SmartBetParams {
             bottomEstWinRange=0, lowerBoundBetPercentage=0,
             betPercentageRangeSize=0.1, betPercentageFoldThreshold=0.15}
@@ -883,7 +884,6 @@ module HoldEm where
       else do --raise
         putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++ 
                     show plChips
-        -- if currBet + betIWant > betToCall then do --raise
         outputRaise pl (betIWant-betToMeetCall) betToMeetCall
         return $ Just (playerIndex pl, betIWant)
 
@@ -987,13 +987,16 @@ module HoldEm where
     -- | entrypoint for the game, define your players in here and run
     startGame :: IO () -- start of program
     startGame = do
-      --test players and state
+      -- | test players and state, when creating new player ensure index matches
+      -- | their order, zero indexed
       let player1 = Player {name="wii matt", hand=[], chips=100,
                             strategy=RandomPlayer, playerIndex=0}
           player2 = Player {name="gwilym", hand=[], chips=100,
                             strategy=AggressivePlayer, playerIndex=1}
           player3 = Player {name="miguel", hand=[], chips=100,
                             strategy=SmartPlayer, playerIndex=2}
+          player4 = Player {name="steve", hand=[], chips=100,
+                            strategy=PassivePlayer, playerIndex=3}
           players = [player1, player2, player3]
           state = GameState {nonBustPlayers=players,
                              playersInRound=[0..length players -1],
@@ -1025,3 +1028,8 @@ module HoldEm where
 -- M: 13
 -- G: 7
 -- W: 2
+
+
+--11/12/24 smart player trial
+--M: 3
+--O: 15
