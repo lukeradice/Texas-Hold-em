@@ -157,14 +157,16 @@ module HoldEm where
     evaluateHand xs
       | length xs == 2 = evaluateHoleHand xs kindsSorted --straight/pair on hole
       | length longestStraight >= 5 && --straight and royal flush  
-        longestStraight == highestFlush =
-          returnStraightFlush xs longestStraight
+        all (`elem` longestStraight) (take 5 highestFlush) &&
+        length highestFlush >= 5  =
+          returnStraightFlush xs (take 5 highestFlush)
       | length highestKind == 4 = --four of a kind
           returnKindHand highestKind kindsGroupedWithoutHighest
-      | length highestKind == 3 && --full house  
+      | length highestKind == 3 && --full house   
         length sndHighestKind >= 2 =
           returnFullHouse highestKind sndHighestKind
-      | length highestFlush >= 5 = returnFlush highestFlush --flush
+      | length highestFlush >= 5 = do
+          returnFlush highestFlush  --flush
       | length longestStraight >= 5 = returnStraight longestStraight --straight
       | length highestKind == 3 = --three of a kind
            returnKindHand highestKind kindsGroupedWithoutHighest
@@ -180,7 +182,7 @@ module HoldEm where
         kindsGrouped = groupBy (\a b -> fst a == fst b) kindsSorted
         suitsGrouped = groupBy (\a b -> snd a == snd b)
                              (sortBy (\(_, a) (_, b)-> compare a b) kindsSorted)
-        longestStraight = 
+        longestStraight =
                   getLongestStraight (sortByKind (addLowAces xs)) suitsGrouped
         highestFlush = getMaxSizeList suitsGrouped
         highestKind = getMaxSizeList kindsGrouped
@@ -195,13 +197,11 @@ module HoldEm where
 
     -- | returns the five card flush hand that was determined
     returnFlush :: [Card] -> PokerHand
-    returnFlush highestFlush = Flush (take 5
-                                  (drop (length highestFlush - 5) highestFlush))
+    returnFlush highestFlush = Flush (take 5 highestFlush)
 
     -- | returns the five card straight hand that was determined
     returnStraight :: [Card] -> PokerHand
-    returnStraight longestStraight = Straight (take 5 (
-                             drop (length longestStraight - 5) longestStraight))
+    returnStraight longestStraight = Straight (take 5 longestStraight)
 
     -- | sorts a list of cards by their kind in descending order
     sortByKind :: [Card] -> [Card]
@@ -216,7 +216,7 @@ module HoldEm where
 
     -- | returns five card straight flush hand that was determined
     returnStraightFlush :: [Card] -> [Card] -> PokerHand
-    returnStraightFlush xs straight | fst (last straight) == Ace =
+    returnStraightFlush xs straight | fst (head straight) == Ace =
                                           RoyalFlush straight
                                        | otherwise =
                                           StraightFlush straight
@@ -244,15 +244,17 @@ module HoldEm where
         mostCommonSuit = snd (head (getMaxSizeList suitsGrouped))
         cardsWithDupesRemoved = removeDupes cards mostCommonSuit
         groupedByStraight = groupByStraight (map (\x -> [x]) cardsWithDupesRemoved)
-    
+
+    -- | removes duplicates from list of cards, ensuring most common suit card
+    -- | not removed to preserve any straight flushes
     removeDupes :: [Card] -> Suit -> [Card]
     removeDupes [] mostCommonSuit = []
     removeDupes [c] mostCommonSuit = [c]
-    removeDupes (c1:c2:cs) mostCommonSuit 
-      | fst c1 == fst c2 = if snd c1 == mostCommonSuit then 
-                              c2 : removeDupes cs mostCommonSuit
-                            else 
+    removeDupes (c1:c2:cs) mostCommonSuit
+      | fst c1 == fst c2 = if snd c1 == mostCommonSuit then
                               c1 : removeDupes cs mostCommonSuit
+                            else
+                              c2 : removeDupes cs mostCommonSuit
       | otherwise = c1 :  removeDupes (c2:cs) mostCommonSuit
 
     -- | groups a sorted one list of one card list into lists of straights
@@ -740,10 +742,11 @@ module HoldEm where
       --get total bet from user in this hand up to and including this all in
       let totalAllInBetAmount = snd (head
                         (filter (\x -> fst x == fst bet) (roundwiseBets state)))
+                        + snd (head
+                        (filter (\x -> fst x == fst bet) (handwiseBets state)))
       return state {
         allInBets = swap allInData totalAllInBetAmount pIndex }
       where
-        betData = roundwiseBets state
         pIndex = fst bet
         allInData = allInBets state
         pName = name (nonBustPlayers state !! pIndex)
