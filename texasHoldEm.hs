@@ -56,7 +56,7 @@ module HoldEm where
                                  communityCards :: [Card],
                                  currentPot :: Int,
                                  roundwiseBets :: [Bet],
-                                 gamewiseBets :: [Bet],
+                                 handwiseBets :: [Bet],
                                  currentDealerIndex :: Int,
                                  smallBlind :: Int,
                                  bigBlind :: Int,
@@ -156,38 +156,12 @@ module HoldEm where
     evaluateHand :: [Card] -> PokerHand
     evaluateHand xs
       | length xs == 2 = evaluateHoleHand xs kindsSorted --straight/pair on hole
-      | length longestStraight >= 5 && --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush  --straight and royal flush 
-         --straight and royal flush  --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush  --straight and royal flush  --straight and royal flush  --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush 
-         --straight and royal flush  --straight and royal flush 
-         --straight and royal flush 
+      | length longestStraight >= 5 && --straight and royal flush  
         longestStraight == highestFlush =
           returnStraightFlush xs longestStraight
       | length highestKind == 4 = --four of a kind
           returnKindHand highestKind kindsGroupedWithoutHighest
-      | length highestKind == 3 && --full house  --full house  --full house  --full house  --full house  --full house  --full house  --full house 
-         --full house 
-         --full house 
-         --full house 
-         --full house 
-         --full house  --full house 
-         --full house  --full house 
-         --full house 
-         --full house 
-         --full house  --full house  --full house  --full house 
-         --full house 
-         --full house 
-         --full house  --full house 
-         --full house 
+      | length highestKind == 3 && --full house  
         length sndHighestKind >= 2 =
           returnFullHouse highestKind sndHighestKind
       | length highestFlush >= 5 = returnFlush highestFlush --flush
@@ -206,7 +180,8 @@ module HoldEm where
         kindsGrouped = groupBy (\a b -> fst a == fst b) kindsSorted
         suitsGrouped = groupBy (\a b -> snd a == snd b)
                              (sortBy (\(_, a) (_, b)-> compare a b) kindsSorted)
-        longestStraight = getLongestStraight (sortByKind (addLowAces xs))
+        longestStraight = 
+                  getLongestStraight (sortByKind (addLowAces xs)) suitsGrouped
         highestFlush = getMaxSizeList suitsGrouped
         highestKind = getMaxSizeList kindsGrouped
         kindsGroupedWithoutHighest = delete highestKind kindsGrouped
@@ -263,9 +238,22 @@ module HoldEm where
           hand = take 5 (highestKind ++ concat kindsGroupedWithoutHighest)
 
     -- | returns the highest straight with the greatest amount of cards
-    getLongestStraight :: [Card] -> [Card]
-    getLongestStraight xs = getMaxSizeList groupedByStraight
-      where groupedByStraight = groupByStraight (map (\x -> [x]) xs)
+    getLongestStraight :: [Card] -> [[Card]] -> [Card]
+    getLongestStraight cards suitsGrouped = getMaxSizeList groupedByStraight
+      where
+        mostCommonSuit = snd (head (getMaxSizeList suitsGrouped))
+        cardsWithDupesRemoved = removeDupes cards mostCommonSuit
+        groupedByStraight = groupByStraight (map (\x -> [x]) cardsWithDupesRemoved)
+    
+    removeDupes :: [Card] -> Suit -> [Card]
+    removeDupes [] mostCommonSuit = []
+    removeDupes [c] mostCommonSuit = [c]
+    removeDupes (c1:c2:cs) mostCommonSuit 
+      | fst c1 == fst c2 = if snd c1 == mostCommonSuit then 
+                              c2 : removeDupes cs mostCommonSuit
+                            else 
+                              c1 : removeDupes cs mostCommonSuit
+      | otherwise = c1 :  removeDupes (c2:cs) mostCommonSuit
 
     -- | groups a sorted one list of one card list into lists of straights
     groupByStraight :: [[Card]] -> [[Card]]
@@ -355,7 +343,7 @@ module HoldEm where
                        playersInRound = [0..(length players -1)],
                        communityCards = [],
                        allInBets = replicate (length players) 0,
-                       gamewiseBets = [(x, 0) | x <- [0..(length players -1)]],
+                       handwiseBets = [(x, 0) | x <- [0..(length players -1)]],
                        roundwiseBets = [(x, 0) | x <- [0..(length players -1)]]}
       --sequence of betting rounds
       state <- shuffleDeck state
@@ -524,7 +512,7 @@ module HoldEm where
 
         let otherPlayersToConsider =  filter
               (\x -> fst x /= fst allInBet && snd x > 0 && fst x `elem`
-              map playerIndex playersIn) (gamewiseBets state)
+              map playerIndex playersIn) (handwiseBets state)
             otherPlayersIdx = map fst otherPlayersToConsider
             totalPlayersConsidered = [players!!i | i <- otherPlayersIdx]
 
@@ -569,14 +557,14 @@ module HoldEm where
     payoutSidePot state allInBet ps ws potLeft isMainPot = do
       --looks at the chip contributions to this all in pot 
       let allInTotalWinning = sum
-                      [min (snd x) (snd allInBet) | x <- gamewiseBets state]
+                      [min (snd x) (snd allInBet) | x <- handwiseBets state]
           -- | update gamewise bet and all in information to inform the
           -- | calculations of the other pots
           updatedGamewiseBets = map (\x ->
                                         if snd x >= snd allInBet then
                                           (fst x, snd x - snd allInBet)
                                         else (fst x, 0))
-                                        (gamewiseBets state)
+                                        (handwiseBets state)
           updatedAllIns = map (\x -> if x >= snd allInBet then x - snd allInBet
                                      else x)
                           (allInBets state)
@@ -592,7 +580,7 @@ module HoldEm where
       return state {currentPot = currentPot state - allInTotalWinning,
                     nonBustPlayers = winnersPayed,
                     allInBets = updatedAllIns,
-                    gamewiseBets = updatedGamewiseBets}
+                    handwiseBets = updatedGamewiseBets}
       where
         dealerIdx = currentDealerIndex state
         players = nonBustPlayers state
@@ -622,8 +610,8 @@ module HoldEm where
                                             fst b `elem` playersInRound state &&
                                               snd b < snd highestBet]
       if null playersWhoNeedToCall then do
-        return state {gamewiseBets = updateGameBetValues
-                                     (roundwiseBets state) (gamewiseBets state)}
+        return state {handwiseBets = updateGameBetValues
+                                     (roundwiseBets state) (handwiseBets state)}
       else doPlayerBets state playersWhoNeedToCall
 
     doPlayerBets state (p:ps) = do
@@ -910,8 +898,6 @@ module HoldEm where
       --if we need to put a bet forward to meet target %, will have to call or
       --raise
       else do --raise
-        putStrLn $ "SMART BET " ++ show betIWant ++ " FROM CHIPS: " ++
-                    show plChips
         outputRaise pl (betIWant-betToMeetCall) betToMeetCall
         return $ Just (playerIndex pl, betIWant)
 
@@ -1026,14 +1012,14 @@ module HoldEm where
                             strategy=SmartPlayer, playerIndex=2}
           player4 = Player {name="steve", hand=[], chips=100,
                             strategy=PassivePlayer, playerIndex=3}
-          players = [player1, player2, player3]
+          players = [player1, player2, player3, player4]
           state = GameState {nonBustPlayers=players,
                              playersInRound=[0..length players -1],
                              deck=[],
                              communityCards=[],
                              currentPot=0,
                              roundwiseBets=[],
-                             gamewiseBets=[],
+                             handwiseBets=[],
                              currentDealerIndex=0,
                              smallBlind=3,
                              bigBlind=6,
