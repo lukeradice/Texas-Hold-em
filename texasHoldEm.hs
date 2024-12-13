@@ -1,13 +1,10 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use second" #-}
-
 module HoldEm where
     import System.Random ( randomRIO )
     import Data.List ( delete, groupBy, sortBy, minimumBy, find )
-    import Data.Maybe (fromMaybe)
-    import Control.Monad
-    import Data.Char (isSpace, toLower, isDigit)
-    import Control.Concurrent
+    import Data.Maybe ( fromMaybe )
+    import Control.Monad( unless, when )
+    import Data.Char ( isSpace, toLower, isDigit )
+    import Control.Concurrent ( threadDelay )
 
     data Suit = Diamonds
               | Spades
@@ -318,7 +315,7 @@ module HoldEm where
         putStr $ "\n" ++ name (head players) ++ " HAS WON ALL THE CHIPS !!!"
         putStrLn $ " IT TOOK HIM " ++ show (count+1) ++ " ROUND(S)"
       else
-        if count == 5 then do --final count reached, rank remaining players
+        if count == 100 then do --final count reached, rank remaining players
           putStrLn $ concat (replicate 100 "*")
           let maxChip = maximum [chips p | p <- players]
               winners = [name p | p <- players, chips p == maxChip]
@@ -446,7 +443,7 @@ module HoldEm where
             roundwiseBets = map
               (\(x,y) -> if x == blindIndex then (x,blind) else (x,y))
               (roundwiseBets state) }
-        return newState
+        return newState {lastBetterIndex=playerIndex updatedPlayer}
       else do --for all in blind      
         let betPaid = chips updatedPlayer + blind
         --update roundwise bet value to show all in and chips and pot changed
@@ -513,8 +510,8 @@ module HoldEm where
             <- payoutSidePot state allInBet playersIn winners potLeft isMainPot
 
         let otherPlayersToConsider =  filter
-              (\x -> fst x /= fst allInBet && snd x > 0 && fst x `elem`
-              map playerIndex playersIn) (handwiseBets state)
+                       (\x -> fst x /= fst allInBet && snd x > 0 && fst x `elem`
+                       map playerIndex playersIn) (handwiseBets state)
             otherPlayersIdx = map fst otherPlayersToConsider
             totalPlayersConsidered = [players!!i | i <- otherPlayersIdx]
 
@@ -602,9 +599,6 @@ module HoldEm where
     doPlayerBets :: GameState -> [Player] -> IO GameState
     doPlayerBets state [] = do
       --determine who needs to call and call function with those players again
-      -- let playersStillIn =
-      --         correctTurnOrder [p | p <- nonBustPlayers state,
-      --                         playerIndex p `elem` playersInRound state] state
       let highestBet = getBetToCall (roundwiseBets state)
           playersWhoNeedToCall =
             filter (not . wentAllIn state) [nonBustPlayers state!!fst b |
@@ -1018,11 +1012,11 @@ module HoldEm where
                             strategy=RandomPlayer, playerIndex=0}
           player2 = Player {name="aggressive", hand=[], chips=100,
                             strategy=AggressivePlayer, playerIndex=1}
-          -- player3 = Player {name="miguel", hand=[], chips=100,
-          --                   strategy=SmartPlayer, playerIndex=2}
-          player3 = Player {name="passive", hand=[], chips=100,
-                            strategy=PassivePlayer, playerIndex=2}
-          players = [player1, player2, player3]
+          player3 = Player {name="smart", hand=[], chips=100,
+                            strategy=SmartPlayer, playerIndex=2}
+          player4 = Player {name="passive", hand=[], chips=100,
+                            strategy=PassivePlayer, playerIndex=3}
+          players = [player1, player2, player3, player4]
           state = GameState {nonBustPlayers=players,
                              playersInRound=[0..length players -1],
                              deck=[],
@@ -1038,23 +1032,3 @@ module HoldEm where
       putStrLn $ concat (replicate 100 "*")
       putStrLn "STARTING GAME\n"
       gameLoop state 0
-
--- trial 1: 
--- M:11
--- G:9
--- W:1
-
--- trial 2: (greater blinds ratio)
--- M: 11
--- G: 8
--- W: 3
-
--- trial 3: (max 100 rounds)
--- M: 13
--- G: 7
--- W: 2
-
-
---11/12/24 smart player trial
---M: 10
---O: 18
