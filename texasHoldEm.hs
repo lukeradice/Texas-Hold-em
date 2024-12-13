@@ -318,7 +318,7 @@ module HoldEm where
         putStr $ "\n" ++ name (head players) ++ " HAS WON ALL THE CHIPS !!!"
         putStrLn $ " IT TOOK HIM " ++ show (count+1) ++ " ROUND(S)"
       else
-        if count == 100 then do --final count reached, rank remaining players
+        if count == 5 then do --final count reached, rank remaining players
           putStrLn $ concat (replicate 100 "*")
           let maxChip = maximum [chips p | p <- players]
               winners = [name p | p <- players, chips p == maxChip]
@@ -602,19 +602,23 @@ module HoldEm where
     doPlayerBets :: GameState -> [Player] -> IO GameState
     doPlayerBets state [] = do
       --determine who needs to call and call function with those players again
-      let playersStillIn =
-              correctTurnOrder [p | p <- nonBustPlayers state,
-                              playerIndex p `elem` playersInRound state] state
-          highestBet = getBetToCall (roundwiseBets state)
+      -- let playersStillIn =
+      --         correctTurnOrder [p | p <- nonBustPlayers state,
+      --                         playerIndex p `elem` playersInRound state] state
+      let highestBet = getBetToCall (roundwiseBets state)
           playersWhoNeedToCall =
             filter (not . wentAllIn state) [nonBustPlayers state!!fst b |
                                             b <- roundwiseBets state,
                                             fst b `elem` playersInRound state &&
                                               snd b < snd highestBet]
+          
       if null playersWhoNeedToCall then do
         return state {handwiseBets = updateGameBetValues
                                      (roundwiseBets state) (handwiseBets state)}
-      else doPlayerBets state playersWhoNeedToCall
+      else do
+        let playersInRightOrder = correctTurnOrder (nonBustPlayers state) state 
+            orderedPlayersToCall = [p | p <- playersInRightOrder, p `elem` playersWhoNeedToCall]
+        doPlayerBets state orderedPlayersToCall
 
     doPlayerBets state (p:ps) = do
       if length (playersInRound state) /= 1 then do --checks for round winner
@@ -1005,17 +1009,20 @@ module HoldEm where
     -- | entrypoint for the game, define your players in here and run
     startGame :: IO () -- start of program
     startGame = do
-      -- | test players and state, when creating new player ensure index matches
-      -- | their order, zero indexed
-      let player1 = Player {name="wii matt", hand=[], chips=100,
+      -- | test players and state
+      -- | IMPORTANT!!!!!!!!!!
+      -- | !! ENSURE THE PLAYER INDEX OF A PLAYER IS UNIQUE AND MATCHES THE  
+      -- | ORDER THEY ARE ADDED ZERO INDEX INTO THE NON BUST PLAYERS LIST AT THE 
+      -- | BEGGINING, IF YOU DON'T DO THIS IT WILL CRASH !!
+      let player1 = Player {name="random", hand=[], chips=100,
                             strategy=RandomPlayer, playerIndex=0}
-          player2 = Player {name="gwilym", hand=[], chips=100,
+          player2 = Player {name="aggressive", hand=[], chips=100,
                             strategy=AggressivePlayer, playerIndex=1}
-          player3 = Player {name="miguel", hand=[], chips=100,
-                            strategy=SmartPlayer, playerIndex=2}
-          player4 = Player {name="steve", hand=[], chips=100,
-                            strategy=PassivePlayer, playerIndex=3}
-          players = [player1, player2, player3, player4]
+          -- player3 = Player {name="miguel", hand=[], chips=100,
+          --                   strategy=SmartPlayer, playerIndex=2}
+          player3 = Player {name="passive", hand=[], chips=100,
+                            strategy=PassivePlayer, playerIndex=2}
+          players = [player1, player2, player3]
           state = GameState {nonBustPlayers=players,
                              playersInRound=[0..length players -1],
                              deck=[],
